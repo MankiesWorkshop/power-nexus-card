@@ -17,7 +17,16 @@ Die Power Nexus Card ist eine Custom Card für Home Assistant zur Visualisierung
 - Responsives Grid-Layout für Section Dashboards
 - GUI-Editor zur Konfiguration
 
-### Installation (manuell)
+### Installation
+
+#### HACS
+
+1. HACS → ⋮ Menü → **Custom repositories**
+2. URL: `https://github.com/MankiesWorkshop/power-nexus-card`
+3. Typ: **Lovelace** → **Add**
+4. Karte in HACS suchen und installieren
+
+#### Manuell
 
 1. `power-nexus-card.js` in dein `config/www/`-Verzeichnis kopieren
 2. In der Lovelace-Ressourcenliste hinzufügen:
@@ -72,7 +81,16 @@ Power Nexus Card is a custom Lovelace card for Home Assistant that visualizes en
 - Responsive grid layout for section dashboards
 - GUI editor for configuration
 
-### Installation (Manual)
+### Installation
+
+#### HACS
+
+1. HACS → ⋮ Menu → **Custom repositories**
+2. URL: `https://github.com/MankiesWorkshop/power-nexus-card`
+3. Type: **Lovelace** → **Add**
+4. Find the card in HACS and install
+
+#### Manual
 
 1. Copy `power-nexus-card.js` into your `config/www/` directory
 2. Add to your Lovelace resource list:
@@ -121,7 +139,6 @@ nodes:
 ![Power Nexus Card](img/screenshot3.png)
 ![Power Nexus Card](img/screenshot4.png)
 ![Power Nexus Card](img/screenshot5.png)
-
 
 ## Lizenz / License
 
