@@ -1,6 +1,3 @@
 {
-  "name": "Power Nexus Card",
-  "content_in_root": true,
-  "filename": "power-nexus-card.js",
-  "render_readme": true
+  "name": "Power Nexus Card"
 }
