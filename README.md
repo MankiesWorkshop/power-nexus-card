@@ -114,6 +114,14 @@ nodes:
 
 ---
 
+## Screenshots
+
+![Power Nexus Card](img/Screenshot1 für GIT.png)
+![Power Nexus Card](img/Screenshot2 für GIT.png)
+![Power Nexus Card](img/Screenshot3 für GIT.png)
+![Power Nexus Card](img/Screenshot4 für GIT.png)
+![Power Nexus Card](img/Screenshot5 für GIT.png)
+
 ## Lizenz / License
 
 MIT
