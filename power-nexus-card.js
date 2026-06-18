@@ -2,8 +2,6 @@
 // Home Assistant Lovelace Custom Card zur Visualisierung von Energieflüssen
 // Version 0.2.010
 
-console.log("PowerNexusCard v0.2.010 geladen", new Date().toLocaleTimeString());
-
 // ─── Geometrie-Konstanten ─────────────────────────────────────────────────────
 const GEOM = {
   BASE_R: 50,           // Basis-Radius / Halbe Breite eines M-Knotens (in SVG-Einheiten)
