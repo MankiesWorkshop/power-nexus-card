@@ -1,6 +1,6 @@
 {
   "name": "Power Nexus Card",
-  "content_in_root": true,
   "filename": "power-nexus-card.js",
-  "render_readme": true
+  "render_readme": true,
+  "homeassistant": "2024.1.0"
 }
