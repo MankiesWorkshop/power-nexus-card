@@ -1,8 +1,8 @@
 // ─── Power Nexus Card ─────────────────────────────────────────────────────────
 // Home Assistant Lovelace Custom Card zur Visualisierung von Energieflüssen
-// Version 0.2.046
+// Version 0.2.050
 
-console.log("PowerNexusCard v0.2.046 geladen", new Date().toLocaleTimeString());
+console.log("PowerNexusCard v0.2.050 geladen", new Date().toLocaleTimeString());
 
 // ─── Geometrie-Konstanten ─────────────────────────────────────────────────────
 const GEOM = {
@@ -33,7 +33,7 @@ const _htmlEscape = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').
 // Power Nexus Card – Energiefluss-Visualisierung für Home Assistant
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type: "custom:power-nexus-card",
+  type: "power-nexus-card",
   name: "Power Nexus Card",
   preview: true,
 });
@@ -45,20 +45,28 @@ class PowerNexus extends HTMLElement {
 
   // Migrationen alter Keys in neue Struktur
   setConfig(c) {
-    // Deep-Clone – HA friert Config-Objekt ein, Mutationen nur auf Kopie
     c = JSON.parse(JSON.stringify(c || {}));
     if (c.nodes?.length) {
       c.nodes = c.nodes.map(n => {
-        const node = { size: "M", slot: 0, invert_flow: false, hide_mode: "hide", ...n };
-        node.slot = Math.max(0, Math.min(3, node.slot ?? 0));        // Slot auf 0–3 clampen
-        node.hide_threshold = Math.max(0, node.hide_threshold ?? 0); // nie negativ
+        const node = { size: "M", slot: 0, invert_flow: false, export_positive: false, hide_mode: "hide", ...n };
+        node.slot = Math.max(0, Math.min(3, node.slot ?? 0));
+        node.hide_threshold = Math.max(0, node.hide_threshold ?? 0);
         return node;
       });
     }
     this.c = c;
-    this._render();
+    // Render erst wenn Element im DOM sitzt
+    if (this.isConnected) {
+      this._render();
+    }
   }
 
+  connectedCallback() {
+  // Wird aufgerufen sobald Element ins DOM eingefügt wird
+    if (this.c) {
+      this._render();
+    }
+  }
   set hass(h) {
     this._hass = h;
     clearTimeout(this._debounceTimer);
@@ -1384,26 +1392,6 @@ class PowerNexusEditor extends HTMLElement {
 
 customElements.define('power-nexus-card-editor', PowerNexusEditor);
 
-// ── HA 2026.6 Scoped-Registry-Patch ──────────────────────────────────────────
-// Workaround: HA 2026.6 registriert Custom Cards mit "custom:"-Präfix,
-// aber CustomElementRegistry.get findet sie nicht ohne Präfix.
-// Diese Monkey-Patches sorgen dafür, dass sowohl "power-nexus-card"
-// als auch "custom:power-nexus-card" die Klasse zurückgeben.
-const _getCE = CustomElementRegistry.prototype.get;
-CustomElementRegistry.prototype.get = function (n) {
-  return n === 'power-nexus-card' || n === 'custom:power-nexus-card' ? PowerNexus : _getCE.call(this, n);
-};
-Object.defineProperty(customElements, 'get', {
-  value: function (n) {
-    return n === 'power-nexus-card' || n === 'custom:power-nexus-card' ? PowerNexus : _getCE.call(this, n);
-  },
-  configurable: true,
-  writable: true
-});
-const _ceOrig = document.createElement.bind(document);
-document.createElement = function (t, o) {
-  const tl = t.toLowerCase();
-  return tl === 'power-nexus-card' || tl === 'custom:power-nexus-card' ? new PowerNexus() : _ceOrig(t, o);
-};
+
 
 export { PowerNexus };
