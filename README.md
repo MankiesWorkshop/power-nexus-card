@@ -2,7 +2,11 @@
 
 **v0.2.046** – Home Assistant Lovelace Custom Card
 
+Please support my work:
+
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support-blue?style=flat&logo=kofi)](https://ko-fi.com/mankiesworkshop)
+
+MANY THANKS!
 
 ---
 
