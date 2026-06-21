@@ -1,8 +1,8 @@
 // ─── Power Nexus Card ─────────────────────────────────────────────────────────
 // Home Assistant Lovelace Custom Card zur Visualisierung von Energieflüssen
-// Version 0.2.050
+// Version 0.2.052
 
-console.log("PowerNexusCard v0.2.050 geladen", new Date().toLocaleTimeString());
+console.log("PowerNexusCard v0.2.052 geladen", new Date().toLocaleTimeString());
 
 // ─── Geometrie-Konstanten ─────────────────────────────────────────────────────
 const GEOM = {
@@ -48,7 +48,7 @@ class PowerNexus extends HTMLElement {
     c = JSON.parse(JSON.stringify(c || {}));
     if (c.nodes?.length) {
       c.nodes = c.nodes.map(n => {
-        const node = { size: "M", slot: 0, invert_flow: false, export_positive: false, hide_mode: "hide", ...n };
+        const node = { size: "M", slot: 0, invert_flow: false, subtract_output: false, export_positive: false, hide_mode: "hide", ...n };
         node.slot = Math.max(0, Math.min(3, node.slot ?? 0));
         node.hide_threshold = Math.max(0, node.hide_threshold ?? 0);
         return node;
@@ -109,8 +109,8 @@ class PowerNexus extends HTMLElement {
         entity: ""
       },
       nodes: [
-        { name: "Solar", icon: "mdi:solar-power", color: "#ffab40", x: -1, y: 0, size: "M", auto_hide: false, hide_threshold: 0, soc_entity: "", connections: [{ target: "home" }] },
-        { name: "Batterie", icon: "mdi:battery", color: "#4fc3f7", x: 1, y: 0, size: "M", auto_hide: false, hide_threshold: 0, soc_entity: "", connections: [{ target: "home" }] },
+        { name: "Solar", icon: "mdi:solar-power", color: "#ffab40", x: -1, y: 0, size: "M", auto_hide: false, hide_threshold: 0, subtract_output: false, soc_entity: "", connections: [{ target: "home" }] },
+        { name: "Batterie", icon: "mdi:battery", color: "#4fc3f7", x: 1, y: 0, size: "M", auto_hide: false, hide_threshold: 0, subtract_output: false, soc_entity: "", connections: [{ target: "home" }] },
       ]
     };
   }
@@ -196,7 +196,7 @@ class PowerNexus extends HTMLElement {
         if (anyNA) {
           if (el._pnLast !== 'N/A') { el._pnLast = 'N/A'; el.textContent = 'N/A'; }
         } else if (anySet) {
-          const pwrTxt = this._fmtPower((v1||0) + (v2||0));
+          const pwrTxt = this._fmtPower((v1||0) + (n.subtract_output ? -1 : 1) * (v2||0));
           if (el._pnLast !== pwrTxt) { el._pnLast = pwrTxt; el.textContent = pwrTxt; }
         } else {
           const txt = (n.entity || n.entity2) ? '?' : ''; // Entität konfiguriert, aber nicht gefunden
@@ -204,7 +204,7 @@ class PowerNexus extends HTMLElement {
         }
         // Automatisch ausblenden/ausgrauen unterhalb Schwellwert (nicht bei N/A)
         if (ng) {
-          const rawPower = (v1||0) + (v2||0);
+          const rawPower = (v1||0) + (n.subtract_output ? -1 : 1) * (v2||0);
           const threshold = parseFloat(n.hide_threshold) || 0;
           ng.classList.remove('pn-hidden', 'pn-faded');
           if (!anyNA && n.auto_hide && threshold > 0 && Math.abs(rawPower) < threshold) {
@@ -285,7 +285,8 @@ class PowerNexus extends HTMLElement {
       if (!n.entity && !n.entity2) return;
       const v1 = (n.entity && this._hass?.states[n.entity]) ? parseFloat(this._hass.states[n.entity].state) || 0 : 0;
       const v2 = (n.entity2 && this._hass?.states[n.entity2]) ? parseFloat(this._hass.states[n.entity2].state) || 0 : 0;
-      cellSums.set(ck, cellSums.get(ck) + (n.invert_flow ? -(v1+v2) : (v1+v2)));
+      const net = v1 + (n.subtract_output ? -1 : 1) * v2;
+      cellSums.set(ck, cellSums.get(ck) + (n.invert_flow ? -net : net));
     });
     Object.entries(cellGroups).forEach(([ck, cNodes]) => {
       const hidden = cNodes.length > 0 && cNodes.every(n => {
@@ -298,7 +299,7 @@ class PowerNexus extends HTMLElement {
         if (threshold <= 0) return false;
         const v1 = (n.entity && this._hass?.states[n.entity]) ? parseFloat(this._hass.states[n.entity].state) || 0 : 0;
         const v2 = (n.entity2 && this._hass?.states[n.entity2]) ? parseFloat(this._hass.states[n.entity2].state) || 0 : 0;
-        return Math.abs(v1 + v2) < threshold;
+        return Math.abs(v1 + (n.subtract_output ? -1 : 1) * v2) < threshold;
       });
       cellAllHidden.set(ck, hidden);
     });
@@ -341,7 +342,7 @@ class PowerNexus extends HTMLElement {
         if (threshold <= 0) return true;
         const v1 = (n.entity && this._hass?.states[n.entity]) ? parseFloat(this._hass.states[n.entity].state) || 0 : 0;
         const v2 = (n.entity2 && this._hass?.states[n.entity2]) ? parseFloat(this._hass.states[n.entity2].state) || 0 : 0;
-        return Math.abs(v1 + v2) >= threshold;
+        return Math.abs(v1 + (n.subtract_output ? -1 : 1) * v2) >= threshold;
       });
       if (allAutoHide && !anyVisible) {
         if (!frame.classList.contains('pn-hidden')) frame.classList.add('pn-hidden');
@@ -826,8 +827,10 @@ const EDITOR_LANG = {
     flowSpeedByValue: 'Wertabhängige Geschwindigkeit',
     socAsGraphic: 'Ladestände grafisch anzeigen',
     nodeNameColor: 'Farbe für Knotenname',
-    name: 'Name', icon: 'Icon', color: 'Farbe', homeEntity: 'Entität', entity: 'Entität Import',
-    entity2: 'Entität Export', size: 'Größe', slot: 'Slot (0–3)',
+    name: 'Name', icon: 'Icon', color: 'Farbe', homeEntity: 'Entität', entity: 'Entität Input',
+    entity2: 'Entität Output', size: 'Größe', slot: 'Slot (0–3)',
+    subtractOutput: 'Entität2 subtrahieren',
+    subtractOutputHint: 'Zieht Entität2 von Entität Input ab (für Geräte die beide Werte positiv melden, z.B. Akku)',
     socEntity: 'Entität Ladestand',
     xPos: 'X-Position', yPos: 'Y-Position',
     connections: 'Verbindungen', addConn: '+ Verbindung', delConn: 'Verbindung entfernen',
@@ -835,7 +838,7 @@ const EDITOR_LANG = {
     autoHide: 'Automatisch ausblenden bei Leistung kleiner:', autoHideThreshold: 'Schwellwert (W)',
     hideMode: 'Ausblendemodus', hideModeHide: 'Ausblenden', hideModeFade: 'Ausgrauen',
     sizeS: 'S – Klein', sizeM: 'M – Mittel', sizeL: 'L – Groß',
-    entitySumHint: 'Anzeige = Summe aus Import + Export',
+    entitySumHint: 'Standard: Anzeige = Input + Output (abziehbar via Checkbox)',
     dupWarning: 'Doppelte Position',
     dupWarningHint: 'Diese Knoten haben dieselbe Position & denselben Slot – sie überlagern sich. Bitte X/Y oder Slot ändern.'
   },
@@ -848,8 +851,10 @@ const EDITOR_LANG = {
     flowSpeedByValue: 'Value-dependent speed',
     socAsGraphic: 'Show SoC as graphic',
     nodeNameColor: 'Color for Node Name',
-    name: 'Name', icon: 'Icon', color: 'Color', homeEntity: 'Entity', entity: 'Entity Import',
-    entity2: 'Entity Export', size: 'Size', slot: 'Slot (0–3)',
+    name: 'Name', icon: 'Icon', color: 'Color', homeEntity: 'Entity', entity: 'Entity Input',
+    entity2: 'Entity Output', size: 'Size', slot: 'Slot (0–3)',
+    subtractOutput: 'Subtract Entity2',
+    subtractOutputHint: 'Subtracts Entity2 from Input (for devices reporting both values as positive, e.g. battery)',
     socEntity: 'Entity State of Charge',
     xPos: 'X Position', yPos: 'Y Position',
     connections: 'Connections', addConn: '+ Connection', delConn: 'Remove connection',
@@ -857,7 +862,7 @@ const EDITOR_LANG = {
     autoHide: 'Auto-hide when power below:', autoHideThreshold: 'Threshold (W)',
     hideMode: 'Hide mode', hideModeHide: 'Hide', hideModeFade: 'Fade',
     sizeS: 'S – Small', sizeM: 'M – Medium', sizeL: 'L – Large',
-    entitySumHint: 'Display = sum of Import + Export',
+    entitySumHint: 'Default: Display = Input + Output (can be subtracted via checkbox)',
     dupWarning: 'Duplicate position',
     dupWarningHint: 'These nodes share the same position & slot – they overlap. Please change X/Y or slot.'
   }
@@ -931,7 +936,7 @@ class PowerNexusEditor extends HTMLElement {
     if (!this._config.home) this._config.home = { name: "Haus", icon: "mdi:home", color: "#ffab40", entity: "" };
     if (!this._config.nodes) this._config.nodes = [];
     // Fehlende Properties pro Node mit Defaults belegen
-    this._config.nodes.forEach(n => { if (!n.connections) n.connections = []; if (!n.size) n.size = "M"; if (n.slot === undefined) n.slot = 0; if (n.invert_flow === undefined) n.invert_flow = false; if (!n.hide_mode) n.hide_mode = "hide"; });
+    this._config.nodes.forEach(n => { if (!n.connections) n.connections = []; if (!n.size) n.size = "M"; if (n.slot === undefined) n.slot = 0; if (n.invert_flow === undefined) n.invert_flow = false; if (n.subtract_output === undefined) n.subtract_output = false; if (!n.hide_mode) n.hide_mode = "hide"; });
     this._render();
   }
 
@@ -962,6 +967,7 @@ class PowerNexusEditor extends HTMLElement {
       size: "M",
       slot: 0,
       invert_flow: false,
+      subtract_output: false,
       auto_hide: false,
       hide_mode: "hide",
       hide_threshold: 0,
@@ -1298,6 +1304,10 @@ class PowerNexusEditor extends HTMLElement {
         <label class="pn-ed-lbl">${this._t('entity2')}</label>
         <div id="pn-node-entity2-wrap-${i}"></div>
         <div class="pn-ed-hint">${this._t('entitySumHint')}</div>
+        <label class="pn-ed-chk">
+          <input type="checkbox" class="pn-ed-cb" data-idx="${i}" data-field="subtract_output" ${n.subtract_output ? 'checked' : ''}> ${this._t('subtractOutput')}
+        </label>
+        <div class="pn-ed-hint">${this._t('subtractOutputHint')}</div>
         <label class="pn-ed-lbl">${this._t('socEntity')}</label>
         <div id="pn-node-soc-wrap-${i}"></div>
         <div class="pn-ed-row">
