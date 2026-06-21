@@ -1,6 +1,6 @@
 {
   "name": "power-nexus-card",
-  "version": "0.2.0",
+  "version": "0.2.46",
   "description": "Home Assistant Lovelace Custom Card zur flexiblen Visualisierung von Energieflüssen im Smart Home",
   "keywords": [
     "home-assistant",
