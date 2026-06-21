@@ -22,7 +22,7 @@ Browser and its version: e.g. Chrome 125
 
 Please provide a detailed description of the failure / bug.
 
-**To Reproduce**
+**Content**
 
 Here is my YAML configuration of the card:
 
