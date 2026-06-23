@@ -380,18 +380,34 @@ nodes:
 
 ## Screenshots
 
-![Power Nexus Card](img/screenshot-card-en.png)
-![Power Nexus Card – Button Mode](img/screenshot-card-buttonmode-en.png)
-![Editor – General Settings](img/screenshot-general-settings-en.png)
-![Editor – Nexus Settings](img/screenshot-nexus-settings-en.png)
+**GUI-Editor**<br>
 ![Editor – Node Settings (1)](img/screenshot-editor1-en.png)
+
+**Normal**<br>
+![Power Nexus Card](img/screenshot-card-en.png)
+
+**Button-Mode**<br>
+![Power Nexus Card – Button Mode](img/screenshot-card-buttonmode-en.png)
+
+**General-Settings**<br>
+![Editor – General Settings](img/screenshot-general-settings-en.png)
+
+**Nexus-Settings**<br>
+![Editor – Nexus Settings](img/screenshot-nexus-settings-en.png)
+
+**Node-Settings**<br>
 ![Editor – Node Settings (2)](img/screenshot-node-settings1-en.png)
+
 ![Editor – Node Settings (3)](img/screenshot-node-settings2-en.png)
+
 ![Editor – Node Settings (4)](img/screenshot-node-settings3-en.png)
 
 ### Animation
 
+**Flow-Animation**<br>
 ![Flow Animation](img/flow-animation.gif)
+
+**No-Animation**<br>
 ![Without Animation](img/noflow-animation.gif)
 
 ## Lizenz / License
