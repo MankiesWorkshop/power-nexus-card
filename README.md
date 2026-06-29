@@ -412,4 +412,7 @@ nodes:
 
 ## Lizenz / License
 
-MIT
+[CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+
+©  – Namensnennung, nicht kommerziell, Weitergabe unter gleichen Bedingungen.
+Kommerzielle Nutzung ist ohne ausdrückliche Genehmigung des Autors **nicht** gestattet.

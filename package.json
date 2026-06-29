@@ -1,6 +1,6 @@
 {
   "name": "power-nexus-card",
-  "version": "0.2.46",
+  "version": "0.2.0",
   "description": "Home Assistant Lovelace Custom Card zur flexiblen Visualisierung von Energieflüssen im Smart Home",
   "keywords": [
     "home-assistant",
@@ -14,7 +14,7 @@
     "photovoltaik"
   ],
   "author": "Stephan",
-  "license": "MIT",
+  "license": "CC-BY-NC-SA-4.0",
   "content_in_root": true,
   "filename": "power-nexus-card.js",
   "render_readme": true,
