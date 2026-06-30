@@ -71,24 +71,24 @@ nodes:
     icon: mdi:solar-power
     size: L
     color: "#ffab40"
-    entity: sensor.pv_power
-    x: -1
-    y: 0
+    entity_input: sensor.pv_power
+    x_position: -1
+    y_position: 0
     connections:
       - target: home
   - name: Netz
     icon: mdi:transmission-tower
     size: L
     color: "#66bb6a"
-    entity: sensor.grid_power
-    x: 0
-    y: 1
+    entity_input: sensor.grid_power
+    x_position: 0
+    y_position: 1
     connections:
       - target: home
   - name: Waschmaschine
     icon: mdi:washing-machine
     size: S
-    entity: sensor.washing_machine_power
+    entity_input: sensor.washing_machine_power
     auto_hide: true
     hide_threshold: 10
     hide_mode: hide
@@ -96,40 +96,45 @@ nodes:
 
 ### Node-Eigenschaften
 
-| Eigenschaft | Typ | Default | Beschreibung |
-|---|---|---|---|
-| `name` | string | `""` | Anzeigename |
-| `icon` | string | `""` | MDI-Icon (z.B. `mdi:solar-power`) |
-| `color` | string | `"#4fc3f7"` | Rahmenfarbe (Hex) |
-| `size` | string | `"M"` | `S`, `M` oder `L` |
-| `entity` | string | `""` | Entität Input (Leistungswert, signed) |
-| `entity2` | string | `""` | Entität Output (Leistungswert, signed) |
-| `subtract_output` | boolean | `false` | Entität Output subtrahieren |
-| `soc_entity` | string | `""` | Entität für Ladestand (SoC) |
-| `aux_entity` | string | `""` | Zusatz-Entität (z.B. Tagesverbrauch) |
-| `nexus_relevant` | boolean | `false` | Für Nexus-Leistung relevant |
-| `slot` | number | `0` | Slot-Position (0–3) |
-| `x` | number | `-1` | X-Position im Grid |
-| `y` | number | `0` | Y-Position im Grid |
-| `invert_flow` | boolean | `false` | Flussrichtung umkehren |
-| `auto_hide` | boolean | `false` | Automatisch ausblenden |
-| `hide_threshold` | number | `0` | Schwellwert Ausblenden (Watt) |
-| `hide_mode` | string | `"hide"` | Ausblendmodus: `hide` oder `fade` |
-| `fade_hide_edges` | boolean | `false` | Auch Flusslinien ausblenden |
-| `bg_color` | string | `"#000000"` | Hintergrundfarbe (Hex) |
-| `bg_transparent` | boolean | `false` | Hintergrund transparent |
-| `icon_color` | string | `""` | Icon-Farbe (Hex) |
-| `power_color` | string | `""` | Entität-Farbe (Hex) |
-| `name_color` | string | `""` | Name-Farbe (Hex) |
-| `aux_color` | string | `""` | Zusatz-Farbe (Hex) |
-| `aux_bg_color` | string | `"#000000"` | Hintergrund Zusatzentität (Hex) |
-| `aux_bg_transparent` | boolean | `false` | Zusatz-Hintergrund transparent |
-| `soc_color` | string | `""` | Ladestand-Farbe (Hex) |
-| `name_size` | number | `100` | Schriftgröße Name (%) |
-| `icon_size` | number | `100` | Icon-Größe (%) |
-| `power_size` | number | `100` | Schriftgröße Entität (%) |
-| `aux_size` | number | `100` | Schriftgröße Zusatz (%) |
-| `connections` | array | `[]` | Verbindungen (z.B. `[{ target: "home" }]`) |
+| Eigenschaft | Typ | Default | Nexus | Knoten | Beschreibung |
+|---|---|---|---|---|---|
+| `name` | string | `""` | ✓ | ✓ | Anzeigename |
+| `icon` | string | `""` | ✓ | ✓ | MDI-Icon (z.B. `mdi:solar-power`) |
+| `color` | string | `"#4fc3f7"` | ✓ | ✓ | Rahmenfarbe (Hex) |
+| `size` | string | `"M"` | ✓ | ✓ | `S`, `M` oder `L` |
+| `entity` | string | `""` | ✓ | – | Entität für Nexus (Leistungswert) |
+| `entity_input` | string | `""` | – | ✓ | Entität Input (Leistungswert, signed) |
+| `entity_output` | string | `""` | – | ✓ | Entität Output (Leistungswert, signed) |
+| `subtract_output` | boolean | `false` | – | ✓ | Entität Output subtrahieren |
+| `soc_entity` | string | `""` | – | ✓ | Entität für Ladestand (SoC) |
+| `aux_entity` | string | `""` | – | ✓ | Zusatz-Entität (z.B. Tagesverbrauch) |
+| `nexus_relevant` | boolean | `false` | – | ✓ | Für Nexus-Leistung relevant |
+| `slot` | number | `0` | – | ✓ | Slot-Position (0–3) |
+| `x_position` | number | `-1` | – | ✓ | X-Position im Grid |
+| `y_position` | number | `0` | – | ✓ | Y-Position im Grid |
+| `invert_flow` | boolean | `false` | – | ✓ | Flussrichtung umkehren |
+| `auto_hide` | boolean | `false` | – | ✓ | Automatisch ausblenden |
+| `hide_threshold` | number | `0` | – | ✓ | Schwellwert Ausblenden (Watt) |
+| `hide_mode` | string | `"hide"` | – | ✓ | Ausblendmodus: `hide` oder `fade` |
+| `fade_hide_edges` | boolean | `false` | – | ✓ | Auch Flusslinien ausblenden |
+| `bg_color` | string | `"#000000"` | ✓ | ✓ | Hintergrundfarbe (Hex) |
+| `bg_transparent` | boolean | `false` | ✓ | ✓ | Hintergrund transparent |
+| `icon_color` | string | `""` | ✓ | ✓ | Icon-Farbe (Hex) |
+| `power_color` | string | `""` | ✓ | ✓ | Entität-Farbe (Hex) |
+| `name_color` | string | `""` | ✓ | ✓ | Name-Farbe (Hex) |
+| `aux_color` | string | `""` | – | ✓ | Zusatz-Farbe (Hex) |
+| `aux_bg_color` | string | `"#000000"` | – | ✓ | Hintergrund Zusatzentität (Hex) |
+| `aux_bg_transparent` | boolean | `false` | – | ✓ | Zusatz-Hintergrund transparent |
+| `soc_color` | string | `""` | – | ✓ | Ladestand-Farbe (Hex) |
+| `name_size` | number | `100` | ✓ | ✓ | Schriftgröße Name (%) |
+| `icon_size` | number | `100` | ✓ | ✓ | Icon-Größe (%) |
+| `power_size` | number | `100` | ✓ | ✓ | Schriftgröße Entität (%) |
+| `aux_size` | number | `100` | – | ✓ | Schriftgröße Zusatz (%) |
+| `soc_size` | number | `100` | – | ✓ | Schriftgröße Ladestand (%) |
+| `soc_stroke_width` | number | `5` | – | ✓ | Dicke der SoC-Grafik (Ring/Balken, 1–20) |
+| `connections` | array | `[]` | – | ✓ | Verbindungen (z.B. `[{ target: "home" }]`) |
+
+> **Hinweis zu Farben:** Alle Farbfelder (`color`, `bg_color`, `icon_color` etc.) unterstützen 8-stelligen Hex-Wert mit Alphakanal (z.B. `#ff000080` für halbtransparentes Rot) sowie HA-Theme-Variablen (z.B. `var(--accent-color)`).
 
 ---
 
@@ -194,24 +199,24 @@ nodes:
     icon: mdi:solar-power
     size: L
     color: "#ffab40"
-    entity: sensor.pv_power
-    x: -1
-    y: 0
+    entity_input: sensor.pv_power
+    x_position: -1
+    y_position: 0
     connections:
       - target: home
   - name: Grid
     icon: mdi:transmission-tower
     size: L
     color: "#66bb6a"
-    entity: sensor.grid_power
-    x: 0
-    y: 1
+    entity_input: sensor.grid_power
+    x_position: 0
+    y_position: 1
     connections:
       - target: home
   - name: Washing Machine
     icon: mdi:washing-machine
     size: S
-    entity: sensor.washing_machine_power
+    entity_input: sensor.washing_machine_power
     auto_hide: true
     hide_threshold: 10
     hide_mode: hide
@@ -219,40 +224,45 @@ nodes:
 
 ### Node Properties
 
-| Property | Type | Default | Description |
-|---|---|---|---|
-| `name` | string | `""` | Display name |
-| `icon` | string | `""` | MDI icon (e.g. `mdi:solar-power`) |
-| `color` | string | `"#4fc3f7"` | Frame color (Hex) |
-| `size` | string | `"M"` | `S`, `M` or `L` |
-| `entity` | string | `""` | Entity Input (power value, signed) |
-| `entity2` | string | `""` | Entity Output (power value, signed) |
-| `subtract_output` | boolean | `false` | Subtract Entity Output |
-| `soc_entity` | string | `""` | Entity for state of charge (SoC) |
-| `aux_entity` | string | `""` | Auxiliary entity (e.g. daily consumption) |
-| `nexus_relevant` | boolean | `false` | Relevant for Nexus power sum |
-| `slot` | number | `0` | Slot position (0–3) |
-| `x` | number | `-1` | X position in grid |
-| `y` | number | `0` | Y position in grid |
-| `invert_flow` | boolean | `false` | Invert flow direction |
-| `auto_hide` | boolean | `false` | Auto-hide |
-| `hide_threshold` | number | `0` | Hide threshold (Watts) |
-| `hide_mode` | string | `"hide"` | Hide mode: `hide` or `fade` |
-| `fade_hide_edges` | boolean | `false` | Also hide flow lines |
-| `bg_color` | string | `"#000000"` | Background color (Hex) |
-| `bg_transparent` | boolean | `false` | Background transparent |
-| `icon_color` | string | `""` | Icon color (Hex) |
-| `power_color` | string | `""` | Entity color (Hex) |
-| `name_color` | string | `""` | Name color (Hex) |
-| `aux_color` | string | `""` | Aux color (Hex) |
-| `aux_bg_color` | string | `"#000000"` | Aux entity background (Hex) |
-| `aux_bg_transparent` | boolean | `false` | Aux background transparent |
-| `soc_color` | string | `""` | SoC color (Hex) |
-| `name_size` | number | `100` | Font size Name (%) |
-| `icon_size` | number | `100` | Icon size (%) |
-| `power_size` | number | `100` | Font size Entity (%) |
-| `aux_size` | number | `100` | Font size Aux (%) |
-| `connections` | array | `[]` | Connections (e.g. `[{ target: "home" }]`) |
+| Property | Type | Default | Nexus | Node | Description |
+|---|---|---|---|---|---|
+| `name` | string | `""` | ✓ | ✓ | Display name |
+| `icon` | string | `""` | ✓ | ✓ | MDI icon (e.g. `mdi:solar-power`) |
+| `color` | string | `"#4fc3f7"` | ✓ | ✓ | Frame color (Hex) |
+| `size` | string | `"M"` | ✓ | ✓ | `S`, `M` or `L` |
+| `entity` | string | `""` | ✓ | – | Entity for Nexus (power value) |
+| `entity_input` | string | `""` | – | ✓ | Entity Input (power value, signed) |
+| `entity_output` | string | `""` | – | ✓ | Entity Output (power value, signed) |
+| `subtract_output` | boolean | `false` | – | ✓ | Subtract Entity Output |
+| `soc_entity` | string | `""` | – | ✓ | Entity for state of charge (SoC) |
+| `aux_entity` | string | `""` | – | ✓ | Auxiliary entity (e.g. daily consumption) |
+| `nexus_relevant` | boolean | `false` | – | ✓ | Relevant for Nexus power sum |
+| `slot` | number | `0` | – | ✓ | Slot position (0–3) |
+| `x_position` | number | `-1` | – | ✓ | X position in grid |
+| `y_position` | number | `0` | – | ✓ | Y position in grid |
+| `invert_flow` | boolean | `false` | – | ✓ | Invert flow direction |
+| `auto_hide` | boolean | `false` | – | ✓ | Auto-hide |
+| `hide_threshold` | number | `0` | – | ✓ | Hide threshold (Watts) |
+| `hide_mode` | string | `"hide"` | – | ✓ | Hide mode: `hide` or `fade` |
+| `fade_hide_edges` | boolean | `false` | – | ✓ | Also hide flow lines |
+| `bg_color` | string | `"#000000"` | ✓ | ✓ | Background color (Hex) |
+| `bg_transparent` | boolean | `false` | ✓ | ✓ | Background transparent |
+| `icon_color` | string | `""` | ✓ | ✓ | Icon color (Hex) |
+| `power_color` | string | `""` | ✓ | ✓ | Entity color (Hex) |
+| `name_color` | string | `""` | ✓ | ✓ | Name color (Hex) |
+| `aux_color` | string | `""` | – | ✓ | Aux color (Hex) |
+| `aux_bg_color` | string | `"#000000"` | – | ✓ | Aux entity background (Hex) |
+| `aux_bg_transparent` | boolean | `false` | – | ✓ | Aux background transparent |
+| `soc_color` | string | `""` | – | ✓ | SoC color (Hex) |
+| `name_size` | number | `100` | ✓ | ✓ | Font size Name (%) |
+| `icon_size` | number | `100` | ✓ | ✓ | Icon size (%) |
+| `power_size` | number | `100` | ✓ | ✓ | Font size Entity (%) |
+| `aux_size` | number | `100` | – | ✓ | Font size Aux (%) |
+| `soc_size` | number | `100` | – | ✓ | Font size SoC (%) |
+| `soc_stroke_width` | number | `5` | – | ✓ | SoC graphic thickness (ring/bar, 1–20) |
+| `connections` | array | `[]` | – | ✓ | Connections (e.g. `[{ target: "home" }]`) |
+
+> **Color Note:** All color fields (`color`, `bg_color`, `icon_color` etc.) support 8-digit hex with alpha channel (e.g. `#ff000080` for semi-transparent red) as well as HA theme variables (e.g. `var(--accent-color)`).
 
 ---
 
@@ -317,24 +327,24 @@ nodes:
     icon: mdi:solar-power
     size: L
     color: "#ffab40"
-    entity: sensor.pv_power
-    x: -1
-    y: 0
+    entity_input: sensor.pv_power
+    x_position: -1
+    y_position: 0
     connections:
       - target: home
   - name: 电网
     icon: mdi:transmission-tower
     size: L
     color: "#66bb6a"
-    entity: sensor.grid_power
-    x: 0
-    y: 1
+    entity_input: sensor.grid_power
+    x_position: 0
+    y_position: 1
     connections:
       - target: home
   - name: 洗衣机
     icon: mdi:washing-machine
     size: S
-    entity: sensor.washing_machine_power
+    entity_input: sensor.washing_machine_power
     auto_hide: true
     hide_threshold: 10
     hide_mode: hide
@@ -342,40 +352,45 @@ nodes:
 
 ### 节点属性
 
-| 属性 | 类型 | 默认值 | 描述 |
-|---|---|---|---|
-| `name` | string | `""` | 显示名称 |
-| `icon` | string | `""` | MDI 图标 (例如 `mdi:solar-power`) |
-| `color` | string | `"#4fc3f7"` | 边框颜色 (Hex) |
-| `size` | string | `"M"` | `S`、`M` 或 `L` |
-| `entity` | string | `""` | 输入实体（功率值，有符号） |
-| `entity2` | string | `""` | 输出实体（功率值，有符号） |
-| `subtract_output` | boolean | `false` | 减去输出实体 |
-| `soc_entity` | string | `""` | 荷电状态实体 (SoC) |
-| `aux_entity` | string | `""` | 辅助实体（例如日消耗量） |
-| `nexus_relevant` | boolean | `false` | 计入 Nexus 功率总和 |
-| `slot` | number | `0` | 槽位 (0–3) |
-| `x` | number | `-1` | 网格中 X 位置 |
-| `y` | number | `0` | 网格中 Y 位置 |
-| `invert_flow` | boolean | `false` | 反转流向 |
-| `auto_hide` | boolean | `false` | 自动隐藏 |
-| `hide_threshold` | number | `0` | 隐藏阈值 (瓦特) |
-| `hide_mode` | string | `"hide"` | 隐藏模式: `hide` 或 `fade` |
-| `fade_hide_edges` | boolean | `false` | 同时隐藏流线 |
-| `bg_color` | string | `"#000000"` | 背景颜色 (Hex) |
-| `bg_transparent` | boolean | `false` | 背景透明 |
-| `icon_color` | string | `""` | 图标颜色 (Hex) |
-| `power_color` | string | `""` | 实体颜色 (Hex) |
-| `name_color` | string | `""` | 名称颜色 (Hex) |
-| `aux_color` | string | `""` | 辅助颜色 (Hex) |
-| `aux_bg_color` | string | `"#000000"` | 辅助实体背景 (Hex) |
-| `aux_bg_transparent` | boolean | `false` | 辅助背景透明 |
-| `soc_color` | string | `""` | 荷电状态颜色 (Hex) |
-| `name_size` | number | `100` | 名称字体大小 (%) |
-| `icon_size` | number | `100` | 图标大小 (%) |
-| `power_size` | number | `100` | 实体字体大小 (%) |
-| `aux_size` | number | `100` | 辅助字体大小 (%) |
-| `connections` | array | `[]` | 连接 (例如 `[{ target: "home" }]`) |
+| 属性 | 类型 | 默认值 | Nexus | 节点 | 描述 |
+|---|---|---|---|---|---|
+| `name` | string | `""` | ✓ | ✓ | 显示名称 |
+| `icon` | string | `""` | ✓ | ✓ | MDI 图标 (例如 `mdi:solar-power`) |
+| `color` | string | `"#4fc3f7"` | ✓ | ✓ | 边框颜色 (Hex) |
+| `size` | string | `"M"` | ✓ | ✓ | `S`、`M` 或 `L` |
+| `entity` | string | `""` | ✓ | – | Nexus 实体（功率值） |
+| `entity_input` | string | `""` | – | ✓ | 输入实体（功率值，有符号） |
+| `entity_output` | string | `""` | – | ✓ | 输出实体（功率值，有符号） |
+| `subtract_output` | boolean | `false` | – | ✓ | 减去输出实体 |
+| `soc_entity` | string | `""` | – | ✓ | 荷电状态实体 (SoC) |
+| `aux_entity` | string | `""` | – | ✓ | 辅助实体（例如日消耗量） |
+| `nexus_relevant` | boolean | `false` | – | ✓ | 计入 Nexus 功率总和 |
+| `slot` | number | `0` | – | ✓ | 槽位 (0–3) |
+| `x_position` | number | `-1` | – | ✓ | 网格中 X 位置 |
+| `y_position` | number | `0` | – | ✓ | 网格中 Y 位置 |
+| `invert_flow` | boolean | `false` | – | ✓ | 反转流向 |
+| `auto_hide` | boolean | `false` | – | ✓ | 自动隐藏 |
+| `hide_threshold` | number | `0` | – | ✓ | 隐藏阈值 (瓦特) |
+| `hide_mode` | string | `"hide"` | – | ✓ | 隐藏模式: `hide` 或 `fade` |
+| `fade_hide_edges` | boolean | `false` | – | ✓ | 同时隐藏流线 |
+| `bg_color` | string | `"#000000"` | ✓ | ✓ | 背景颜色 (Hex) |
+| `bg_transparent` | boolean | `false` | ✓ | ✓ | 背景透明 |
+| `icon_color` | string | `""` | ✓ | ✓ | 图标颜色 (Hex) |
+| `power_color` | string | `""` | ✓ | ✓ | 实体颜色 (Hex) |
+| `name_color` | string | `""` | ✓ | ✓ | 名称颜色 (Hex) |
+| `aux_color` | string | `""` | – | ✓ | 辅助颜色 (Hex) |
+| `aux_bg_color` | string | `"#000000"` | – | ✓ | 辅助实体背景 (Hex) |
+| `aux_bg_transparent` | boolean | `false` | – | ✓ | 辅助背景透明 |
+| `soc_color` | string | `""` | – | ✓ | 荷电状态颜色 (Hex) |
+| `name_size` | number | `100` | ✓ | ✓ | 名称字体大小 (%) |
+| `icon_size` | number | `100` | ✓ | ✓ | 图标大小 (%) |
+| `power_size` | number | `100` | ✓ | ✓ | 实体字体大小 (%) |
+| `aux_size` | number | `100` | – | ✓ | 辅助字体大小 (%) |
+| `soc_size` | number | `100` | – | ✓ | 荷电状态字体大小 (%) |
+| `soc_stroke_width` | number | `5` | – | ✓ | 荷电状态图形粗细（环/条，1–20） |
+| `connections` | array | `[]` | – | ✓ | 连接 (例如 `[{ target: "home" }]`) |
+
+> **颜色提示：** 所有颜色字段（`color`、`bg_color`、`icon_color` 等）支持 8 位十六进制含透明通道（例如 `#ff000080` 表示半透明红色）以及 HA 主题变量（例如 `var(--accent-color)`）。
 
 
 ## Screenshots

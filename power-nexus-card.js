@@ -1,17 +1,17 @@
 // ─── Power Nexus Card ─────────────────────────────────────────────────────────
 // Home Assistant Lovelace Custom Card zur Visualisierung von Energieflüssen
-// Version 0.3.00
+// Version 0.3.14
 
-const CARD_VERSION = "0.3.00";
+const CARD_VERSION = "0.3.14";
 console.log(`PowerNexusCard v${CARD_VERSION} geladen`, new Date().toLocaleTimeString());
 
 // ─── Geometrie-Konstanten ─────────────────────────────────────────────────────
 const GEOM = {
   BASE_R: 50,           // Basis-Radius / Halbe Breite eines M-Knotens (in SVG-Einheiten)
   FO_SIZE: 52,          // foreignObject-Größe (Container für ha-icon im SVG)
-  ICON_PX: 28,          // Icon-Pixelgröße (--mdc-icon-size)
+  ICON_PX: 22,          // Icon-Pixelgröße (--mdc-icon-size)
   FONT_SIZE: 17,        // Schriftgröße für Knotenname und Leistungswert
-  ICON_SCALE: 1.3,      // Icon-Skalierungsfaktor (transform:scale auf Wrapper-Div)
+  ICON_SCALE: 1.0,      // Icon-Skalierungsfaktor (transform:scale auf Wrapper-Div)
   CAP_FRAC: 0.35,       // Cap-Height-Anteil (zur Berechnung der visuellen Textmitte)
   BTN_HEIGHT: 0.85,     // Button-Höhenfaktor (Höhe = Breite × 0.85, ca. 4:3,4)
   BTN_CORNER: 12,       // Button-Eckenradius (wird mit sf multipliziert)
@@ -56,15 +56,21 @@ class PowerNexus extends HTMLElement {
     }
     if (c.nodes?.length) {
       c.nodes = c.nodes.map(n => {
-        const node = { size: "M", slot: 0, invert_flow: false, subtract_output: false, hide_mode: "hide", fade_hide_edges: false, nexus_relevant: false, aux_entity: "", aux_bg_color: "#000000", aux_bg_transparent: false, bg_color: "#000000", bg_transparent: false, icon_color: "", power_color: "", aux_color: "", soc_color: "", name_color: "", name_size: 100, icon_size: 100, power_size: 100, aux_size: 100, ...n };
+        // Migration: entity/entity2 → entity_input/entity_output
+        if (n.entity_input === undefined && n.entity !== undefined) { n.entity_input = n.entity; delete n.entity; }
+        if (n.entity_output === undefined && n.entity2 !== undefined) { n.entity_output = n.entity2; delete n.entity2; }
+        // Migration: x/y → x_position/y_position
+        if (n.x_position === undefined && n.x !== undefined) { n.x_position = n.x; delete n.x; }
+        if (n.y_position === undefined && n.y !== undefined) { n.y_position = n.y; delete n.y; }
+        const node = { size: "M", slot: 0, invert_flow: false, subtract_output: false, hide_mode: "hide", fade_hide_edges: false, nexus_relevant: false, aux_entity: "", aux_bg_color: "#000000", aux_bg_transparent: false, bg_color: "#000000", bg_transparent: false, icon_color: "", power_color: "", aux_color: "", soc_color: "", name_color: "", name_size: 100, icon_size: 100, power_size: 100, aux_size: 100, soc_size: 100, soc_stroke_width: 5, ...n };
         node.slot = Math.max(0, Math.min(3, node.slot ?? 0));
         node.hide_threshold = Math.max(0, node.hide_threshold ?? 0);
         return node;
       });
     }
-    c.home = { bg_color: "#000000", bg_opacity: 100, icon_color: "", power_color: "", name_color: "", name_size: 100, icon_size: 100, power_size: 100, ...(c.home || {}) };
-    // Migration: altes bg_transparent → bg_opacity
-    if (c.home.bg_transparent === true) c.home.bg_opacity = 0;
+    c.home = { bg_color: "#000000", bg_transparent: false, size: "L", icon_color: "", power_color: "", name_color: "", name_size: 100, icon_size: 100, power_size: 100, ...(c.home || {}) };
+    // Migration: altes bg_opacity → bg_transparent
+    if (c.home.bg_opacity !== undefined) { c.home.bg_transparent = c.home.bg_opacity === 0; delete c.home.bg_opacity; }
     this.c = c;
     this._pcache = null; // Cache leeren bei Config-Wechsel
     // Render erst wenn Element im DOM sitzt
@@ -115,12 +121,12 @@ class PowerNexus extends HTMLElement {
   // Prüft ob ein Knoten unter seinen auto_hide-Schwellwert gefallen ist
   _isNodeBelowThreshold(n) {
     if (!n.auto_hide) return false;
-    if (this._isEntityNA(n.entity) || this._isEntityNA(n.entity2)) return false;
-    if ((n.entity && !this._hass?.states[n.entity]) || (n.entity2 && !this._hass?.states[n.entity2])) return false;
+    if (this._isEntityNA(n.entity_input) || this._isEntityNA(n.entity_output)) return false;
+    if ((n.entity_input && !this._hass?.states[n.entity_input]) || (n.entity_output && !this._hass?.states[n.entity_output])) return false;
     const threshold = parseFloat(n.hide_threshold) || 0;
     if (threshold <= 0) return false;
-    const v1 = (n.entity && this._hass?.states[n.entity]) ? parseFloat(this._hass.states[n.entity].state) || 0 : 0;
-    const v2 = (n.entity2 && this._hass?.states[n.entity2]) ? parseFloat(this._hass.states[n.entity2].state) || 0 : 0;
+    const v1 = (n.entity_input && this._hass?.states[n.entity_input]) ? parseFloat(this._hass.states[n.entity_input].state) || 0 : 0;
+    const v2 = (n.entity_output && this._hass?.states[n.entity_output]) ? parseFloat(this._hass.states[n.entity_output].state) || 0 : 0;
     return Math.abs(this._calcNetPower(v1, v2, n.subtract_output)) < threshold;
   }
 
@@ -134,6 +140,7 @@ class PowerNexus extends HTMLElement {
         soc_display: "text",
         full_watt_display: false,
         flow_animation: true,
+        show_version: false,
         linien_staerke: 10,
         knoten_name_farbe: "#ffffff"
       },
@@ -142,8 +149,9 @@ class PowerNexus extends HTMLElement {
         icon: "mdi:home",
         color: "#ffab40",
         entity: "",
+        size: "L",
         bg_color: "#000000",
-        bg_opacity: 100,
+        bg_transparent: false,
         icon_color: "",
         power_color: "",
         name_color: "",
@@ -152,8 +160,8 @@ class PowerNexus extends HTMLElement {
         power_size: 100
       },
       nodes: [
-        { name: "Solar", icon: "mdi:solar-power", color: "#ffab40", x: -1, y: 0, size: "M", auto_hide: false, hide_threshold: 0, fade_hide_edges: false, nexus_relevant: false, aux_entity: "", aux_bg_color: "#000000", aux_bg_transparent: false, bg_color: "#000000", bg_transparent: false, icon_color: "", power_color: "", aux_color: "", soc_color: "", name_color: "", name_size: 100, icon_size: 100, power_size: 100, aux_size: 100, subtract_output: false, soc_entity: "", connections: [{ target: "home" }] },
-        { name: "Battery", icon: "mdi:battery", color: "#4fc3f7", x: 1, y: 0, size: "M", auto_hide: false, hide_threshold: 0, fade_hide_edges: false, nexus_relevant: false, aux_entity: "", aux_bg_color: "#000000", aux_bg_transparent: false, bg_color: "#000000", bg_transparent: false, icon_color: "", power_color: "", aux_color: "", soc_color: "", name_color: "", name_size: 100, icon_size: 100, power_size: 100, aux_size: 100, subtract_output: false, soc_entity: "", connections: [{ target: "home" }] },
+        { name: "Solar", icon: "mdi:solar-power", color: "#ffab40", x_position: -1, y_position: 0, size: "M", auto_hide: false, hide_threshold: 0, fade_hide_edges: false, nexus_relevant: false, aux_entity: "", aux_bg_color: "#000000", aux_bg_transparent: false, bg_color: "#000000", bg_transparent: false, icon_color: "", power_color: "", aux_color: "", soc_color: "", name_color: "", name_size: 100, icon_size: 100, power_size: 100, aux_size: 100, soc_size: 100, soc_stroke_width: 5, subtract_output: false, entity_input: "", entity_output: "", soc_entity: "", connections: [{ target: "home" }] },
+        { name: "Battery", icon: "mdi:battery", color: "#4fc3f7", x_position: 1, y_position: 0, size: "M", auto_hide: false, hide_threshold: 0, fade_hide_edges: false, nexus_relevant: false, aux_entity: "", aux_bg_color: "#000000", aux_bg_transparent: false, bg_color: "#000000", bg_transparent: false, icon_color: "", power_color: "", aux_color: "", soc_color: "", name_color: "", name_size: 100, icon_size: 100, power_size: 100, aux_size: 100, soc_size: 100, soc_stroke_width: 5, subtract_output: false, entity_input: "", entity_output: "", soc_entity: "", connections: [{ target: "home" }] },
       ]
     };
   }
@@ -173,6 +181,7 @@ class PowerNexus extends HTMLElement {
             { name: "soc_display", selector: { select: { options: [{ value: "text", label: "Text" }, { value: "graphic", label: "Grafisch" }, { value: "both", label: "Beides" }] } } },
             { name: "full_watt_display", selector: { boolean: {} } },
             { name: "flow_animation", selector: { boolean: {} } },
+            { name: "show_version", selector: { boolean: {} } },
             { name: "linien_staerke", selector: { number: { min: 2, max: 30, step: 1 } } },
             { name: "knoten_name_farbe", selector: { text: { type: "color" } } }
           ]
@@ -184,6 +193,7 @@ class PowerNexus extends HTMLElement {
           schema: [
             { name: "name", selector: { text: {} } },
             { name: "icon", selector: { icon: {} } },
+            { name: "size", selector: { select: { options: [{ value: "S", label: "S – Klein" }, { value: "M", label: "M – Mittel" }, { value: "L", label: "L – Groß" }] } } },
             { name: "color", selector: { text: { type: "color" } } },
             { name: "entity", selector: { entity: {} } }
           ]
@@ -202,8 +212,9 @@ class PowerNexus extends HTMLElement {
   _toHex(v, fallback = "#ffab40") {
     if (!v) return fallback;
     if (typeof v === "string") {
+      // Theme-Variable (var(--...)) unverändert durchreichen
+      if (v.startsWith("var(--")) return v;
       const h = v.replace(/^#/, "");
-      // Nur gültige CSS-Hex-Längen: 3, 4, 6 oder 8 Zeichen
       if (/^[0-9a-fA-F]{3}$|^[0-9a-fA-F]{4}$|^[0-9a-fA-F]{6}$|^[0-9a-fA-F]{8}$/.test(h)) return "#" + h;
     }
     return fallback;
@@ -232,12 +243,12 @@ class PowerNexus extends HTMLElement {
       const el = cache.powerEl;
       const ng = cache.nodeEl;
       if (el) {
-        const na1 = this._isEntityNA(n.entity);
-        const na2 = this._isEntityNA(n.entity2);
+        const na1 = this._isEntityNA(n.entity_input);
+        const na2 = this._isEntityNA(n.entity_output);
         const anyNA = na1 || na2;
-        const anySet = (n.entity && this._hass?.states[n.entity]) || (n.entity2 && this._hass?.states[n.entity2]);
-        const v1 = (n.entity && this._hass?.states[n.entity] && !na1) ? parseFloat(this._hass.states[n.entity].state) || 0 : null;
-        const v2 = (n.entity2 && this._hass?.states[n.entity2] && !na2) ? parseFloat(this._hass.states[n.entity2].state) || 0 : null;
+        const anySet = (n.entity_input && this._hass?.states[n.entity_input]) || (n.entity_output && this._hass?.states[n.entity_output]);
+        const v1 = (n.entity_input && this._hass?.states[n.entity_input] && !na1) ? parseFloat(this._hass.states[n.entity_input].state) || 0 : null;
+        const v2 = (n.entity_output && this._hass?.states[n.entity_output] && !na2) ? parseFloat(this._hass.states[n.entity_output].state) || 0 : null;
         // Rohwert für Nexus-Summe cachen (vor Formatierung)
         cache._rawPower = anyNA ? null : (anySet ? this._calcNetPower(v1, v2, n.subtract_output) : null);
         if (anyNA) {
@@ -246,7 +257,7 @@ class PowerNexus extends HTMLElement {
           const pwrTxt = this._fmtPower(this._calcNetPower(v1, v2, n.subtract_output));
           if (el._pnLast !== pwrTxt) { el._pnLast = pwrTxt; el.textContent = pwrTxt; }
         } else {
-          const txt = (n.entity || n.entity2) ? '?' : ''; // Entität konfiguriert, aber nicht gefunden
+          const txt = (n.entity_input || n.entity_output) ? '?' : ''; // Entität konfiguriert, aber nicht gefunden
           if (el._pnLast !== txt) { el._pnLast = txt; el.textContent = txt; }
         }
         // Automatisch ausblenden/ausgrauen unterhalb Schwellwert (nicht bei N/A)
@@ -384,12 +395,12 @@ class PowerNexus extends HTMLElement {
     const cellEdgesHidden = new Map();
     const cellGroups = {};
     allNodes.forEach(n => {
-      const ck = `${n.x??0},${n.y??0}`;
+      const ck = `${n.x_position??0},${n.y_position??0}`;
       if (!cellGroups[ck]) { cellGroups[ck] = []; cellSums.set(ck, 0); }
       cellGroups[ck].push(n);
-      if (!n.entity && !n.entity2) return;
-      const v1 = (n.entity && this._hass?.states[n.entity]) ? parseFloat(this._hass.states[n.entity].state) || 0 : 0;
-      const v2 = (n.entity2 && this._hass?.states[n.entity2]) ? parseFloat(this._hass.states[n.entity2].state) || 0 : 0;
+      if (!n.entity_input && !n.entity_output) return;
+      const v1 = (n.entity_input && this._hass?.states[n.entity_input]) ? parseFloat(this._hass.states[n.entity_input].state) || 0 : 0;
+      const v2 = (n.entity_output && this._hass?.states[n.entity_output]) ? parseFloat(this._hass.states[n.entity_output].state) || 0 : 0;
       const net = this._calcNetPower(v1, v2, n.subtract_output);
       cellSums.set(ck, cellSums.get(ck) + (n.invert_flow ? -net : net));
     });
@@ -459,7 +470,7 @@ class PowerNexus extends HTMLElement {
       const cellKey = frame.dataset.cell;
       if (!cellKey) return;
       const [gx, gy] = cellKey.split(',').map(Number);
-      const cellNodes = (this.c?.nodes || []).filter(n => (n.x??0) === gx && (n.y??0) === gy);
+      const cellNodes = (this.c?.nodes || []).filter(n => (n.x_position??0) === gx && (n.y_position??0) === gy);
       if (cellNodes.length === 0) return;
       const allAutoHide = cellNodes.every(n => n.auto_hide);
       const anyVisible = cellNodes.some(n => {
@@ -596,7 +607,7 @@ class PowerNexus extends HTMLElement {
     // SVG viewBox: 0 0 100 115, Home bei (50,50)
     const HOME_CX = 50, HOME_CY = 50;
     const SIZE_FACTOR = { S: GEOM.SIZE_S, M: GEOM.SIZE_M, L: GEOM.SIZE_L };
-    const HOME_SF = SIZE_FACTOR.L;
+    const HOME_SF = SIZE_FACTOR[h.size] || SIZE_FACTOR.L;
     const HOME_HW = Math.round(GEOM.BASE_R * HOME_SF);
     const HOME_HH = Math.round(HOME_HW * GEOM.BTN_HEIGHT);
     const homeIconSizeMul = ((h.icon_size !== undefined ? h.icon_size : 100)) / 100;
@@ -651,7 +662,7 @@ class PowerNexus extends HTMLElement {
     const occupied = new Set(['0,0']); // Home ist immer besetzt
     const cellNodes = {};
     nodes.forEach((n, i) => {
-      const k = `${n.x??0},${n.y??0}`;
+      const k = `${n.x_position??0},${n.y_position??0}`;
       cellCount[k] = (cellCount[k] || 0) + 1;
       occupied.add(k);
       if (!cellNodes[k]) cellNodes[k] = [];
@@ -659,12 +670,14 @@ class PowerNexus extends HTMLElement {
     });
 
     this._auxBoxes = []; // Für separate Z-Order der Aux-Boxen
+    this._iconMeta = {};  // Icon-Metadaten für DOM-API-Erstellung (Safari-Kompatibilität)
 
     this._ctx = { button, HOME_CX, HOME_CY, CELL, SIZE_FACTOR, nodeNameColor, cellCount,
       HOME_HW, HOME_HH, homeFoSize, homeFoX, homeFoY, homeIconSc, homeIconPx,
       homeNameFontSize, homePowerFontSize, homeLabelY, homePowerY, homeColor, homeName, homeIcon, uid,
       homeBgColor: this._toHex(h.bg_color, '#000000'),
-      homeBgOpacity: h.bg_opacity ?? 100,
+      homeBgTransparent: h.bg_transparent === true,
+      homeSize: h.size || 'L',
       homeIconColor: h.icon_color ? this._toHex(h.icon_color) : homeColor,
       homePowerColor: h.power_color ? this._toHex(h.power_color) : homeColor,
       homeNameColor: h.name_color ? this._toHex(h.name_color) : nodeNameColor,
@@ -713,8 +726,8 @@ class PowerNexus extends HTMLElement {
           const tj = parseInt(target);
           if (isNaN(tj) || tj >= nodes.length) return;
           const tn = nodes[tj];
-          tx = HOME_CX + (tn.x || 0) * CELL;
-          ty = HOME_CY + (tn.y || 0) * CELL;
+          tx = HOME_CX + (tn.x_position || 0) * CELL;
+          ty = HOME_CY + (tn.y_position || 0) * CELL;
           tgtHW = GEOM.BASE_R * (SIZE_FACTOR[tn.size] || 1.0);
           tgtHH = tgtHW * GEOM.BTN_HEIGHT;
         }
@@ -733,7 +746,7 @@ class PowerNexus extends HTMLElement {
         if (target !== 'home') {
           const tj = parseInt(target);
           if (!isNaN(tj) && tj < nodes.length) {
-            const tKey = `${nodes[tj].x??0},${nodes[tj].y??0}`;
+            const tKey = `${nodes[tj].x_position??0},${nodes[tj].y_position??0}`;
             tgtMulti = (cellNodes[tKey]?.length || 0) > 1;
           }
         }
@@ -749,8 +762,8 @@ class PowerNexus extends HTMLElement {
         if (target !== 'home') {
           const tj = parseInt(target);
           if (!isNaN(tj) && tj < nodes.length) {
-            tgtGX = nodes[tj].x || 0;
-            tgtGY = nodes[tj].y || 0;
+            tgtGX = nodes[tj].x_position || 0;
+            tgtGY = nodes[tj].y_position || 0;
           }
         }
 
@@ -848,7 +861,9 @@ class PowerNexus extends HTMLElement {
       <style>
         :host { display: block; height: 100%; box-sizing: border-box; font-family: Roboto, sans-serif; background: var(--ha-card-background, var(--card-background-color)); border-radius: var(--ha-card-border-radius, 12px); border: 1px solid var(--ha-card-border-color, var(--divider-color, rgba(128,128,128,0.3))); box-shadow: var(--ha-card-box-shadow, none); }
         .pn-container { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
-        .pn-svg { width: 88px; height: 88px; overflow: visible; transform: scale(${scale}); transform-origin: center; }
+        .pn-card-inner { position: relative; width: 88px; height: 88px; transform: scale(${scale}); transform-origin: center; }
+        .pn-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: visible; }
+        .pn-icon-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
         .pn-home-shape { ${shapeFill} ${shapeStroke} ${shapeFilter} }
         .pn-node-shape { ${shapeFill} ${shapeFilter} ${button ? `stroke: url(#pn-btn-stroke-${uid}); stroke-width: 1.0;` : ''} }
         .pn-home-power { text-anchor: middle; font-weight: 600; }
@@ -865,24 +880,46 @@ class PowerNexus extends HTMLElement {
         .pn-node-group.pn-faded { opacity: 0.25; }
         .pn-edge.pn-hidden { display: none; }
         .pn-cell-frame.pn-hidden { display: none; }
+        .pn-version-badge { position: absolute; top: 4px; left: 6px; font-size: 9px; color: var(--secondary-text-color, #888); opacity: 0.55; pointer-events: none; z-index: 10; }
         @keyframes pn-flow-fwd { to { stroke-dashoffset: -${dashTotal}; } }
         @keyframes pn-flow-rev { to { stroke-dashoffset: ${dashTotal}; } }
       </style>
       <div class="pn-container">
-        <svg class="pn-svg" viewBox="0 0 100 115" preserveAspectRatio="xMidYMid meet">
-          ${buttonDefs}
-          ${gradsSvg}
-          ${edgesSvg}
-          ${arrowsSvg}
-          ${this._auxBoxes.length ? `<g class="pn-aux-boxes">${this._auxBoxes.map(b => `<g transform="translate(${b.cx},${b.cy})">${b.html}</g>`).join('')}</g>` : ''}
-          ${nodes.length ? `<g class="pn-nodes">${nodeSvgs}</g>` : ''}
-          ${groupFrames ? `<g class="pn-cell-frames">${groupFrames}</g>` : ''}
-          ${this._buildHomeSvg()}
-        </svg>
+        ${g.show_version === true ? `<div class="pn-version-badge">v${CARD_VERSION}</div>` : ''}
+        <div class="pn-card-inner">
+          <svg class="pn-svg" viewBox="0 0 100 115" preserveAspectRatio="xMidYMid meet">
+            ${buttonDefs}
+            ${gradsSvg}
+            ${edgesSvg}
+            ${arrowsSvg}
+            ${this._auxBoxes.length ? `<g class="pn-aux-boxes">${this._auxBoxes.map(b => `<g transform="translate(${b.cx},${b.cy})">${b.html}</g>`).join('')}</g>` : ''}
+            ${nodes.length ? `<g class="pn-nodes">${nodeSvgs}</g>` : ''}
+            ${groupFrames ? `<g class="pn-cell-frames">${groupFrames}</g>` : ''}
+            ${this._buildHomeSvg()}
+          </svg>
+          <div class="pn-icon-overlay"></div>
+        </div>
       </div>
     `;
 
     this._ctx = null;
+
+    // Icons per DOM-API ausserhalb des SVG erstellen (Safari: foreignObject unbrauchbar)
+    const iconOverlay = this.shadowRoot.querySelector('.pn-icon-overlay');
+    if (iconOverlay && this._iconMeta) {
+      Object.entries(this._iconMeta).forEach(([key, meta]) => {
+        const css = this._svgToCss(meta.cx, meta.cy);
+        const cssSize = meta.foSize * css.scale;
+        const wrap = document.createElement('div');
+        wrap.style.cssText = `position:absolute;left:${(css.x - cssSize/2).toFixed(1)}px;top:${(css.y - cssSize/2).toFixed(1)}px;width:${cssSize.toFixed(1)}px;height:${cssSize.toFixed(1)}px;display:flex;align-items:center;justify-content:center;`;
+        const haIcon = document.createElement('ha-icon');
+        haIcon.setAttribute('icon', meta.icon);
+        haIcon.style.cssText = `--mdc-icon-size:${meta.iconPx}px;color:${meta.iconColor};transform:scale(${meta.iconSc});transform-origin:50% 50%;`;
+        wrap.appendChild(haIcon);
+        iconOverlay.appendChild(wrap);
+      });
+    }
+    this._iconMeta = null;
 
     // DOM-Referenzen cachen – vermeidet querySelector-Lawine in _updateValues
     this._homeEl = this.shadowRoot.querySelector('.pn-home-power');
@@ -915,8 +952,8 @@ class PowerNexus extends HTMLElement {
       const ng = this.shadowRoot.querySelector(`.pn-node-${i}`);
       if (!ng) return;
       ng.addEventListener('click', () => {
-        if (n.entity) {
-          this.dispatchEvent(new CustomEvent('hass-more-info', { bubbles: true, composed: true, detail: { entityId: n.entity } }));
+        if (n.entity_input) {
+          this.dispatchEvent(new CustomEvent('hass-more-info', { bubbles: true, composed: true, detail: { entityId: n.entity_input } }));
         }
       });
       // Click-Handler: Aux-Box – öffnet Zusatz-Entität statt Knoten-Entität
@@ -929,12 +966,30 @@ class PowerNexus extends HTMLElement {
           }
         });
       }
+      // Click-Handler: SoC – öffnet soc_entity-Verlauf
+      const socEl = this.shadowRoot.querySelector(`.pn-node-soc-${i}`);
+      if (socEl && n.soc_entity) {
+        socEl.style.cursor = 'pointer';
+        socEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.dispatchEvent(new CustomEvent('hass-more-info', { bubbles: true, composed: true, detail: { entityId: n.soc_entity } }));
+        });
+      }
     });
+  }
+
+  // SVG-viewBox → CSS-Pixel-Mapping (für Icon-Overlay)
+  _svgToCss(sx, sy) {
+    const vbW = 100, vbH = 115, el = 88;
+    const s = Math.min(el / vbW, el / vbH);
+    const cw = vbW * s, ch = vbH * s;
+    const ox = (el - cw) / 2, oy = (el - ch) / 2;
+    return { x: ox + sx * s, y: oy + sy * s, scale: s };
   }
 
   _buildNodeSvg(n, i) {
     const ctx = this._ctx;
-    const sx = n.x || 0, sy = n.y || 0;
+    const sx = n.x_position || 0, sy = n.y_position || 0;
     const cellKey = `${sx},${sy}`;
     const hasNeighbors = (ctx.cellCount[cellKey] || 0) > 1;
     const slot = n.slot ?? 0;
@@ -960,6 +1015,8 @@ class PowerNexus extends HTMLElement {
     const nodeIconMul = ((n.icon_size !== undefined ? n.icon_size : 100)) / 100;
     const nodePowerMul = ((n.power_size !== undefined ? n.power_size : 100)) / 100;
     const nodeAuxMul = ((n.aux_size !== undefined ? n.aux_size : 100)) / 100;
+    const nodeSocMul = ((n.soc_size !== undefined ? n.soc_size : 100)) / 100;
+    const socSw = n.soc_stroke_width ?? 5;  // SoC-Ring/Bar-Strichstärke
     const foSize = Math.round(GEOM.FO_SIZE * sf * nodeIconMul);
     const foOff = foSize / 2;
     const iconSc = (GEOM.ICON_SCALE * sf * nodeIconMul).toFixed(2);
@@ -994,23 +1051,20 @@ class PowerNexus extends HTMLElement {
     const auxSvgInner = `<path d="${auxPath}" ${auxFill} ${auxStroke} stroke-linejoin="round"/><text class="pn-node-aux-${i}" x="0" y="${auxBoxY + auxBoxH*auxValY}" font-size="${auxBoxFont}" fill="${auxColor}" text-anchor="middle" dy="0.35em"></text>`;
     // Aux-Box für separate Z-Order vormerken
     if (this._auxBoxes) this._auxBoxes.push({ cx, cy, html: `<g class="pn-node-aux-group-${i}" style="display:none">${auxSvgInner}</g>` });
+    // Icon-Metadaten für DOM-API-Erstellung speichern (Safari-Kompatibilität)
+    if (this._iconMeta) this._iconMeta[`node_${i}`] = { icon: nIcon, iconSc, iconPx, iconColor, foSize, cx, cy };
     return `
         <g class="pn-node-group pn-node-${i}" transform="translate(${cx},${cy})">
           ${shapeEl}
           ${highlightEl}
-          <foreignObject x="${-foOff}" y="${-foOff}" width="${foSize}" height="${foSize}">
-            <div style="transform:scale(${iconSc});transform-origin:center;display:flex;align-items:center;justify-content:center;width:${foSize}px;height:${foSize}px;">
-              <ha-icon icon="${_htmlEscape(nIcon)}" style="--mdc-icon-size:${iconPx}px;color:${iconColor};"></ha-icon>
-            </div>
-          </foreignObject>
           <text class="pn-node-label" x="0" y="${labelY}" font-size="${nameFontSize}" fill="${nameColor}" text-anchor="middle">${_htmlEscape(nName)}</text>
           <text class="pn-node-power-${i}" x="0" y="${powerY}" font-size="${powerFontSize}" fill="${powerColor}" text-anchor="middle" font-weight="600"></text>
-          <text class="pn-node-soc-${i}" x="${foOff - 8}" y="0" font-size="${Math.round(nameFontSize * 0.75)}" fill="${socColor}" text-anchor="start" dy="0.3em" opacity="0.85"></text>
+          <text class="pn-node-soc-${i}" x="${foOff - 8}" y="0" font-size="${Math.round(baseFontSize * nodeSocMul * 0.75)}" fill="${socColor}" text-anchor="start" dy="0.3em" opacity="0.85"></text>
           ${ctx.button
-            ? `<rect class="pn-node-soc-bar-bg-${i}" x="${-nR + 8}" y="${halfH - 6}" width="${nR*2 - 16}" height="2.5" rx="1.25" fill="${socColor}" opacity="0.2" style="display:none;"/>
-               <rect class="pn-node-soc-bar-${i}" x="${-nR + 8}" y="${halfH - 6}" width="0" height="2.5" rx="1.25" fill="${socColor}" opacity="0.85" style="display:none;"/>`
-            : `<circle class="pn-node-soc-ring-bg-${i}" cx="0" cy="0" r="${nR + 2.5}" fill="none" stroke="${socColor}" stroke-width="5" opacity="0.2" style="display:none;"/>
-               <circle class="pn-node-soc-ring-${i}" cx="0" cy="0" r="${nR + 2.5}" fill="none" stroke="${socColor}" stroke-width="5" opacity="0.85" stroke-dasharray="${2 * Math.PI * (nR + 2.5)}" stroke-dashoffset="0" transform="rotate(-90)" style="display:none;"/>`
+            ? `<rect class="pn-node-soc-bar-bg-${i}" x="${-nR + 8}" y="${halfH - 4 - socSw}" width="${nR*2 - 16}" height="${socSw}" rx="${(socSw/2).toFixed(1)}" fill="${socColor}" opacity="0.2" style="display:none;"/>
+               <rect class="pn-node-soc-bar-${i}" x="${-nR + 8}" y="${halfH - 4 - socSw}" width="0" height="${socSw}" rx="${(socSw/2).toFixed(1)}" fill="${socColor}" opacity="0.85" style="display:none;"/>`
+            : `<circle class="pn-node-soc-ring-bg-${i}" cx="0" cy="0" r="${(nR + socSw/2).toFixed(1)}" fill="none" stroke="${socColor}" stroke-width="${socSw}" opacity="0.2" style="display:none;"/>
+               <circle class="pn-node-soc-ring-${i}" cx="0" cy="0" r="${(nR + socSw/2).toFixed(1)}" fill="none" stroke="${socColor}" stroke-width="${socSw}" opacity="0.85" stroke-dasharray="${(2 * Math.PI * (nR + socSw/2)).toFixed(1)}" stroke-dashoffset="0" transform="rotate(-90)" style="display:none;"/>`
           }
         </g>
       `;
@@ -1018,18 +1072,15 @@ class PowerNexus extends HTMLElement {
 
   _buildHomeSvg() {
     const ctx = this._ctx;
+    // Icon-Metadaten für DOM-API-Erstellung speichern (Safari-Kompatibilität)
+    if (this._iconMeta) this._iconMeta.home = { icon: ctx.homeIcon || 'mdi:home', iconSc: ctx.homeIconSc, iconPx: ctx.homeIconPx, iconColor: ctx.homeIconColor, foSize: ctx.homeFoSize, cx: ctx.HOME_CX, cy: ctx.HOME_CY };
     return `
           <g class="pn-home-group">
             ${ctx.button
               ? `<rect class="pn-home-shape" x="${ctx.HOME_CX - ctx.HOME_HW}" y="${ctx.HOME_CY - ctx.HOME_HH}" width="${ctx.HOME_HW*2}" height="${ctx.HOME_HH*2}" rx="${Math.round(GEOM.HOME_CORNER * GEOM.SIZE_L)}"/>
                  <rect class="pn-btn-highlight" x="${ctx.HOME_CX - ctx.HOME_HW + 5}" y="${ctx.HOME_CY - ctx.HOME_HH + 3}" width="${ctx.HOME_HW*0.32}" height="${ctx.HOME_HH*0.28}" rx="4"/>`
-              : `<circle class="pn-home-shape" cx="${ctx.HOME_CX}" cy="${ctx.HOME_CY}" r="${ctx.HOME_HW}" fill="${ctx.homeBgOpacity === 0 ? 'none' : ctx.homeBgColor}"${ctx.homeBgOpacity > 0 && ctx.homeBgOpacity < 100 ? ` opacity="${(ctx.homeBgOpacity/100).toFixed(2)}"` : ''}/>`
+              : `<circle class="pn-home-shape" cx="${ctx.HOME_CX}" cy="${ctx.HOME_CY}" r="${ctx.HOME_HW}" fill="${ctx.homeBgTransparent ? 'none' : ctx.homeBgColor}"/>`
             }
-            <foreignObject x="${ctx.homeFoX}" y="${ctx.homeFoY}" width="${ctx.homeFoSize}" height="${ctx.homeFoSize}">
-              <div style="transform:scale(${ctx.homeIconSc});transform-origin:center;display:flex;align-items:center;justify-content:center;width:${ctx.homeFoSize}px;height:${ctx.homeFoSize}px;">
-                <ha-icon icon="${_htmlEscape(ctx.homeIcon || 'mdi:home')}" style="--mdc-icon-size:${ctx.homeIconPx}px;color:${ctx.homeIconColor};"></ha-icon>
-              </div>
-            </foreignObject>
             <text class="pn-home-label" x="${ctx.HOME_CX}" y="${ctx.homeLabelY}" fill="${ctx.homeNameColor}" font-size="${ctx.homeNameFontSize}">${ctx.homeName || 'Haus'}</text>
             <text class="pn-home-power" x="${ctx.HOME_CX}" y="${ctx.homePowerY}" font-size="${ctx.homePowerFontSize}" fill="${ctx.homePowerColor}"></text>
           </g>`;
@@ -1051,12 +1102,13 @@ const EDITOR_LANG = {
     socDisplay: 'Ladestandsanzeige', socDisplayText: 'Text', socDisplayGraphic: 'Grafisch', socDisplayBoth: 'Beides',
     fullWattDisplay: 'Immer volle Watt-Anzeige',
     flowAnimation: 'Fluss-Animation',
+    showVersion: 'Version anzeigen',
     nodeNameColor: 'Farbe für Knotenname',
     name: 'Name', icon: 'Icon', color: 'Rahmen', homeEntity: 'Entität',
     homeSourceEntity: 'Quelle: Entität', homeSourceNexus: 'Quelle: Summe der Nexus-Knoten',
     homeNexusHint: 'Die Anzeige zeigt den Wert dieser Entität – oder die Summe aller Nexus-relevanten Knoten, sobald mindestens einer aktiviert ist.',
-    entity: 'Entität Input',
-    entity2: 'Entität Output', size: 'Größe', slot: 'Slot (0–3)',
+    entityInput: 'Entität Input',
+    entityOutput: 'Entität Output', size: 'Größe', slot: 'Slot (0–3)',
     subtractOutput: 'Entität Output subtrahieren',
     subtractOutputHint: 'Zieht Entität Output von Entität Input ab (für Geräte die beide Werte positiv melden, z.B. Akku)',
     socEntity: 'Entität Ladestand',
@@ -1065,7 +1117,7 @@ const EDITOR_LANG = {
     iconColor: 'Icon', powerColor: 'Entität', auxColor: 'Zusatz',
     socColor: 'Ladestand', nameColor: 'Name',
     bgColor: 'Hintergrund', bgTransparent: 'Transparent', bgOpacity: 'Deckkraft',
-    nameSize: 'Schrift Name', iconSize: 'Icon-Größe', powerSize: 'Schrift Entität', auxSize: 'Schrift Zusatz',
+    nameSize: 'Schrift Name', iconSize: 'Icon-Größe', powerSize: 'Schrift Entität', auxSize: 'Schrift Zusatz', socSize: 'Schrift Ladestand', socStrokeWidth: 'Dicke SoC-Grafik',
     xPos: 'X-Position', yPos: 'Y-Position',
     connections: 'Verbindungen', addConn: '+ Verbindung', delConn: 'Verbindung entfernen',
     invertFlow: 'Flussrichtung invertieren',
@@ -1089,12 +1141,13 @@ const EDITOR_LANG = {
     socDisplay: 'SoC Display', socDisplayText: 'Text', socDisplayGraphic: 'Graphic', socDisplayBoth: 'Both',
     fullWattDisplay: 'Always show full Watts',
     flowAnimation: 'Flow Animation',
+    showVersion: 'Show Version',
     nodeNameColor: 'Color for Node Name',
     name: 'Name', icon: 'Icon', color: 'Frame', homeEntity: 'Entity',
     homeSourceEntity: 'Source: Entity', homeSourceNexus: 'Source: Sum of nexus nodes',
     homeNexusHint: 'The display shows the value of this entity – or the sum of all nexus-relevant nodes once at least one is enabled.',
-    entity: 'Entity Input',
-    entity2: 'Entity Output', size: 'Size', slot: 'Slot (0–3)',
+    entityInput: 'Entity Input',
+    entityOutput: 'Entity Output', size: 'Size', slot: 'Slot (0–3)',
     subtractOutput: 'Subtract Entity Output',
     subtractOutputHint: 'Subtracts Entity Output from Input (for devices reporting both values as positive, e.g. battery)',
     socEntity: 'Entity State of Charge',
@@ -1103,7 +1156,7 @@ const EDITOR_LANG = {
     iconColor: 'Icon', powerColor: 'Entity', auxColor: 'Aux',
     socColor: 'SoC', nameColor: 'Name',
     bgColor: 'Background', bgTransparent: 'Transparent', bgOpacity: 'Opacity',
-    nameSize: 'Font Name', iconSize: 'Icon Size', powerSize: 'Font Entity', auxSize: 'Font Aux',
+    nameSize: 'Font Name', iconSize: 'Icon Size', powerSize: 'Font Entity', auxSize: 'Font Aux', socSize: 'Font SoC', socStrokeWidth: 'SoC Graphic Thickness',
     xPos: 'X Position', yPos: 'Y Position',
     connections: 'Connections', addConn: '+ Connection', delConn: 'Remove connection',
     invertFlow: 'Invert flow direction',
@@ -1191,8 +1244,15 @@ class PowerNexusEditor extends HTMLElement {
       this._config.general.soc_display = 'text';
     }
     if (!this._config.general) this._config.general = { knoten_zoom: 1.0, knoten_abstand: 195, button_mode: false };
-    if (!this._config.home) this._config.home = { name: "Haus", icon: "mdi:home", color: "#ffab40", entity: "", bg_color: "#000000", bg_opacity: 100, icon_color: "", power_color: "", name_color: "" };
+    if (!this._config.home) this._config.home = { name: "Haus", icon: "mdi:home", color: "#ffab40", entity: "", size: "L", bg_color: "#000000", bg_transparent: false, icon_color: "", power_color: "", name_color: "" };
     if (!this._config.nodes) this._config.nodes = [];
+    // Migration für alte Keys
+    this._config.nodes.forEach(n => {
+      if (n.entity_input === undefined && n.entity !== undefined) { n.entity_input = n.entity; delete n.entity; }
+      if (n.entity_output === undefined && n.entity2 !== undefined) { n.entity_output = n.entity2; delete n.entity2; }
+      if (n.x_position === undefined && n.x !== undefined) { n.x_position = n.x; delete n.x; }
+      if (n.y_position === undefined && n.y !== undefined) { n.y_position = n.y; delete n.y; }
+    });
     // Fehlende Properties pro Node mit Defaults belegen
     this._config.nodes.forEach(n => { if (!n.connections) n.connections = []; if (!n.size) n.size = "M"; if (n.slot === undefined) n.slot = 0; if (n.invert_flow === undefined) n.invert_flow = false; if (n.subtract_output === undefined) n.subtract_output = false; if (!n.hide_mode) n.hide_mode = "hide"; });
     this._render();
@@ -1208,7 +1268,7 @@ class PowerNexusEditor extends HTMLElement {
   }
 
   _addNode() {
-    const occupied = new Set(this._config.nodes.map(n => `${n.x ?? 0},${n.y ?? 0}`));
+    const occupied = new Set(this._config.nodes.map(n => `${n.x_position ?? 0},${n.y_position ?? 0}`));
     let x = 0, y = 0;
     for (let d = 1; d <= 20; d++) {
       const candidates = [
@@ -1377,7 +1437,7 @@ class PowerNexusEditor extends HTMLElement {
     const duplicates = [];
     const dupIndices = new Set();
     nodes.forEach((n, i) => {
-      const key = `${n.x??0},${n.y??0},${n.slot??0}`;
+      const key = `${n.x_position??0},${n.y_position??0},${n.slot??0}`;
       if (posMap[key] !== undefined) { duplicates.push([posMap[key], i]); dupIndices.add(posMap[key]); dupIndices.add(i); }
       else posMap[key] = i;
     });
@@ -1483,6 +1543,9 @@ class PowerNexusEditor extends HTMLElement {
       <label class="pn-ed-chk">
         <input type="checkbox" id="pn-flow-animation" ${flowAnimOn ? 'checked' : ''}> ${this._t('flowAnimation')}
       </label>
+      <label class="pn-ed-chk">
+        <input type="checkbox" id="pn-show-version" ${c.general?.show_version === true ? 'checked' : ''}> ${this._t('showVersion')}
+      </label>
       <div style="text-align:right;font-size:10px;color:var(--secondary-text-color,#999);margin-top:14px;opacity:0.5">Power Nexus Card v${CARD_VERSION}</div>
     `;
     const zoomSlider = this.shadowRoot.getElementById('pn-knoten-zoom');
@@ -1496,6 +1559,7 @@ class PowerNexusEditor extends HTMLElement {
     const socDisplaySel = this.shadowRoot.getElementById('pn-soc-display');
     const fullWattCb = this.shadowRoot.getElementById('pn-full-watt-display');
     const flowAnimCb = this.shadowRoot.getElementById('pn-flow-animation');
+    const showVersionCb = this.shadowRoot.getElementById('pn-show-version');
     zoomSlider.addEventListener('input', () => { zoomDisp.textContent = parseFloat(zoomSlider.value).toFixed(1); });
     abstandSlider.addEventListener('input', () => { abstandDisp.textContent = parseFloat(abstandSlider.value).toFixed(0); });
     linienSlider.addEventListener('input', () => { linienDisp.textContent = parseFloat(linienSlider.value).toFixed(0); });
@@ -1508,6 +1572,7 @@ class PowerNexusEditor extends HTMLElement {
       this._config.general.soc_display = socDisplaySel.value;
       this._config.general.full_watt_display = fullWattCb.checked;
       this._config.general.flow_animation = flowAnimCb.checked;
+      this._config.general.show_version = showVersionCb.checked;
       this._fireChange();
     };
     zoomSlider.addEventListener('change', saveGeneral);
@@ -1518,6 +1583,7 @@ class PowerNexusEditor extends HTMLElement {
     socDisplaySel.addEventListener('change', saveGeneral);
     fullWattCb.addEventListener('change', saveGeneral);
     flowAnimCb.addEventListener('change', saveGeneral);
+    showVersionCb.addEventListener('change', saveGeneral);
 
     // -- Home --
     const h = c.home || {};
@@ -1531,6 +1597,12 @@ class PowerNexusEditor extends HTMLElement {
       <div class="pn-ed-hint" style="font-weight:600;color:var(--primary-color,#03a9f4);">${homeSource}</div>
       <label class="pn-ed-lbl">${this._t('icon')}</label>
       <div id="pn-home-icon-wrap"></div>
+      <label class="pn-ed-lbl">${this._t('size')}</label>
+      <select class="pn-ed-inp" id="pn-home-size" style="width:100%;">
+        <option value="S" ${(h.size || 'L') === 'S' ? 'selected' : ''}>${this._t('sizeS')}</option>
+        <option value="M" ${(h.size || 'L') === 'M' ? 'selected' : ''}>${this._t('sizeM')}</option>
+        <option value="L" ${(h.size || 'L') === 'L' ? 'selected' : ''}>${this._t('sizeL')}</option>
+      </select>
       <div style="display:flex;margin-top:10px;margin-bottom:4px;">
         <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;">
           <span style="font-size:10px;color:var(--secondary-text-color,#757575);">${this._t('color')}</span>
@@ -1552,13 +1624,11 @@ class PowerNexusEditor extends HTMLElement {
       <div style="display:flex;align-items:flex-start;margin-bottom:2px;">
         <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;">
           <span style="font-size:10px;color:var(--secondary-text-color,#757575);">${this._t('bgColor')}</span>
-          <input class="pn-ed-inp" type="color" id="pn-home-bg-color" value="${_htmlEscape(h.bg_color || '#000000')}">
-        </div>
-        <div style="flex:3;margin-left:6px;display:flex;flex-direction:column;gap:1px;">
-          <span style="font-size:10px;color:var(--secondary-text-color,#757575);">${this._t('bgOpacity')}</span>
-          <div class="pn-ed-slider" style="width:100%;margin-top:6px;">
-            <input type="range" min="0" max="100" step="1" id="pn-home-bg-opacity" value="${h.bg_opacity ?? 100}">
-            <span class="pn-ed-slider-val" id="pn-home-bg-opacity-val">${h.bg_opacity ?? 100}%</span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input class="pn-ed-inp" type="color" id="pn-home-bg-color" value="${_htmlEscape(h.bg_color || '#000000')}">
+            <label class="pn-ed-chk" style="margin-top:0;">
+              <input type="checkbox" id="pn-home-bg-transparent" ${h.bg_transparent ? 'checked' : ''}> ${this._t('bgTransparent')}
+            </label>
           </div>
         </div>
       </div>
@@ -1598,10 +1668,11 @@ class PowerNexusEditor extends HTMLElement {
     hn.addEventListener('change', () => { this._config.home.name = hn.value; this._fireChange(); });
     hc.addEventListener('change', () => { this._config.home.color = hc.value; this._fireChange(); });
     const hbg = this.shadowRoot.getElementById('pn-home-bg-color');
-    const hbgo = this.shadowRoot.getElementById('pn-home-bg-opacity');
-    const hbgov = this.shadowRoot.getElementById('pn-home-bg-opacity-val');
+    const hbgt = this.shadowRoot.getElementById('pn-home-bg-transparent');
     if (hbg) hbg.addEventListener('change', () => { this._config.home.bg_color = hbg.value; this._fireChange(); });
-    if (hbgo) { hbgo.addEventListener('input', () => { if (hbgov) hbgov.textContent = hbgo.value + '%'; }); hbgo.addEventListener('change', () => { this._config.home.bg_opacity = parseFloat(hbgo.value) ?? 100; this._fireChange(); }); }
+    if (hbgt) hbgt.addEventListener('change', () => { this._config.home.bg_transparent = hbgt.checked; this._fireChange(); });
+    const hSize = this.shadowRoot.getElementById('pn-home-size');
+    if (hSize) hSize.addEventListener('change', () => { this._config.home.size = hSize.value; this._fireChange(); });
     const hiCol = this.shadowRoot.getElementById('pn-home-icon-color');
     const hpCol = this.shadowRoot.getElementById('pn-home-power-color');
     const hnCol = this.shadowRoot.getElementById('pn-home-name-color');
@@ -1644,20 +1715,20 @@ class PowerNexusEditor extends HTMLElement {
         <div class="pn-ed-row">
           <div>
             <label class="pn-ed-lbl">${this._t('xPos')}</label>
-            <input class="pn-ed-inp ${dupIndices.has(i) ? 'pn-ed-dup-inp' : ''}" type="number" data-idx="${i}" data-field="x" value="${n.x ?? -1}" style="width:80px;">
+            <input class="pn-ed-inp ${dupIndices.has(i) ? 'pn-ed-dup-inp' : ''}" type="number" data-idx="${i}" data-field="x_position" value="${n.x_position ?? -1}" style="width:80px;">
           </div>
           <div>
             <label class="pn-ed-lbl">${this._t('yPos')}</label>
-            <input class="pn-ed-inp ${dupIndices.has(i) ? 'pn-ed-dup-inp' : ''}" type="number" data-idx="${i}" data-field="y" value="${n.y ?? 0}" style="width:80px;">
+            <input class="pn-ed-inp ${dupIndices.has(i) ? 'pn-ed-dup-inp' : ''}" type="number" data-idx="${i}" data-field="y_position" value="${n.y_position ?? 0}" style="width:80px;">
           </div>
         </div>
         ${dupIndices.has(i) ? `<div class="pn-ed-dup-hint">⚠ ${this._t('dupWarning')} – ${this._t('dupWarningHint')}</div>` : ''}
-        <label class="pn-ed-lbl">${this._t('entity')}</label>
+        <label class="pn-ed-lbl">${this._t('entityInput')}</label>
         <div id="pn-node-entity-wrap-${i}"></div>
         <label class="pn-ed-chk">
           <input type="checkbox" class="pn-ed-cb" data-idx="${i}" data-field="nexus_relevant" ${n.nexus_relevant ? 'checked' : ''}> ${this._t('nexusRelevant')}
         </label>
-        <label class="pn-ed-lbl">${this._t('entity2')}</label>
+        <label class="pn-ed-lbl">${this._t('entityOutput')}</label>
         <div id="pn-node-entity2-wrap-${i}"></div>
         <div class="pn-ed-hint">${this._t('entitySumHint')}</div>
         <label class="pn-ed-chk">
@@ -1757,6 +1828,16 @@ class PowerNexusEditor extends HTMLElement {
           <input type="range" min="50" max="200" step="5" class="pn-ed-inp pn-ed-sld" data-idx="${i}" data-field="aux_size" value="${n.aux_size ?? 100}">
           <span class="pn-ed-slider-val">${n.aux_size ?? 100}%</span>
         </div>
+        <label class="pn-ed-lbl">${this._t('socSize')}</label>
+        <div class="pn-ed-slider">
+          <input type="range" min="50" max="200" step="5" class="pn-ed-inp pn-ed-sld" data-idx="${i}" data-field="soc_size" value="${n.soc_size ?? 100}">
+          <span class="pn-ed-slider-val">${n.soc_size ?? 100}%</span>
+        </div>
+        <label class="pn-ed-lbl">${this._t('socStrokeWidth')}</label>
+        <div class="pn-ed-slider">
+          <input type="range" min="1" max="20" step="0.5" class="pn-ed-inp pn-ed-sld" data-idx="${i}" data-field="soc_stroke_width" value="${n.soc_stroke_width ?? 5}">
+          <span class="pn-ed-slider-val">${n.soc_stroke_width ?? 5}</span>
+        </div>
         <div class="pn-ed-conn-sec">
           <div style="font-size:11px;font-weight:600;color:var(--secondary-text-color,#757575);margin-top:14px;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">${this._t('connections')}</div>
           <div id="pn-node-conns-${i}"></div>
@@ -1773,19 +1854,19 @@ class PowerNexusEditor extends HTMLElement {
       const ne = document.createElement('ha-entity-picker');
       ne.setAttribute('allow-custom-entity', '');
       ne.setAttribute('hideClearIcon', '');
-      ne.value = n.entity || '';
+      ne.value = n.entity_input || '';
       ne.hass = this._hass;
       ne.style.width = '100%';
-      ne.addEventListener('value-changed', (e) => { this._config.nodes[i].entity = e.detail.value; this._fireChange(); });
+      ne.addEventListener('value-changed', (e) => { this._config.nodes[i].entity_input = e.detail.value; this._fireChange(); });
       this.shadowRoot.getElementById('pn-node-entity-wrap-' + i).appendChild(ne);
-      // Entity2-Picker
+      // Entity-Output-Picker
       const ne2 = document.createElement('ha-entity-picker');
       ne2.setAttribute('allow-custom-entity', '');
       ne2.setAttribute('hideClearIcon', '');
-      ne2.value = n.entity2 || '';
+      ne2.value = n.entity_output || '';
       ne2.hass = this._hass;
       ne2.style.width = '100%';
-      ne2.addEventListener('value-changed', (e) => { this._config.nodes[i].entity2 = e.detail.value; this._fireChange(); });
+      ne2.addEventListener('value-changed', (e) => { this._config.nodes[i].entity_output = e.detail.value; this._fireChange(); });
       this.shadowRoot.getElementById('pn-node-entity2-wrap-' + i).appendChild(ne2);
       // SoC-Picker
       const ns = document.createElement('ha-entity-picker');
