@@ -1,8 +1,8 @@
 // ─── Power Nexus Card ─────────────────────────────────────────────────────────
 // Home Assistant Lovelace Custom Card zur Visualisierung von Energieflüssen
-// Version 0.3.14
+// Version 0.3.19
 
-const CARD_VERSION = "0.3.14";
+const CARD_VERSION = "0.3.19";
 console.log(`PowerNexusCard v${CARD_VERSION} geladen`, new Date().toLocaleTimeString());
 
 // ─── Geometrie-Konstanten ─────────────────────────────────────────────────────
@@ -272,6 +272,13 @@ class PowerNexus extends HTMLElement {
           if (ng.classList.contains(otherCls)) ng.classList.remove(otherCls);
           if (!ng.classList.contains(targetCls)) ng.classList.add(targetCls);
           }
+          // Icon im Overlay mit aus-/einblenden
+          const iw = cache.iconWrap || this.shadowRoot.querySelector(`.pn-icon-node_${i}`);
+          if (iw) {
+            iw.classList.remove('pn-hidden', 'pn-faded');
+            if (ng.classList.contains('pn-hidden')) iw.classList.add('pn-hidden');
+            else if (ng.classList.contains('pn-faded')) iw.classList.add('pn-faded');
+          }
         }
         // Ladestand (SoC)
         const socEl = cache.socEl;
@@ -393,6 +400,7 @@ class PowerNexus extends HTMLElement {
     const cellSums = new Map();
     const cellAllHidden = new Map();
     const cellEdgesHidden = new Map();
+    const cellEdgesFaded = new Map();
     const cellGroups = {};
     allNodes.forEach(n => {
       const ck = `${n.x_position??0},${n.y_position??0}`;
@@ -419,6 +427,11 @@ class PowerNexus extends HTMLElement {
         return false;
       });
       cellEdgesHidden.set(ck, edgesHidden);
+      // Kanten ausgrauen wenn ALLE Knoten faded (nicht hide) und nicht alle fade_hide_edges
+      const edgesFaded = cNodes.length > 0 && cNodes.every(n => this._isNodeBelowThreshold(n))
+        && !cNodes.some(n => (n.hide_mode || 'hide') === 'hide')
+        && !cNodes.every(n => n.fade_hide_edges === true);
+      cellEdgesFaded.set(ck, edgesFaded);
     });
 
     root.querySelectorAll('.pn-edge').forEach((edge, eIdx) => {
@@ -426,7 +439,12 @@ class PowerNexus extends HTMLElement {
       if (!cellKey) return;
       const sum = cellSums.get(cellKey) || 0;
       if (cellAllHidden.get(cellKey) || cellEdgesHidden.get(cellKey)) { if (!edge.classList.contains('pn-hidden')) edge.classList.add('pn-hidden'); return; }
-      edge.classList.remove('rev', 'still', 'pn-hidden');
+      edge.classList.remove('rev', 'still', 'pn-hidden', 'pn-faded');
+      // Ausgegraute Kanten wenn Knoten faded ohne fade_hide_edges
+      if (cellEdgesFaded.get(cellKey)) {
+        if (!edge.classList.contains('pn-faded')) edge.classList.add('pn-faded');
+        return;
+      }
       if (sum === 0 || isNaN(sum)) { if (!edge.classList.contains('pn-hidden')) edge.classList.add('pn-hidden'); return; }
       edge.classList.remove('pn-hidden');
       if (sum > 0) { if (!edge.classList.contains('rev')) edge.classList.add('rev'); }
@@ -879,7 +897,11 @@ class PowerNexus extends HTMLElement {
         .pn-node-group.pn-hidden { display: none; }
         .pn-node-group.pn-faded { opacity: 0.25; }
         .pn-edge.pn-hidden { display: none; }
+        .pn-edge.pn-faded { opacity: 0.35; animation: none; stroke-dasharray: 4,6; }
         .pn-cell-frame.pn-hidden { display: none; }
+        .pn-icon-wrap.pn-hidden { display: none; }
+        .pn-icon-wrap.pn-faded { opacity: 0.25; }
+        .pn-icon-wrap { display: flex; align-items: center; justify-content: center; }
         .pn-version-badge { position: absolute; top: 4px; left: 6px; font-size: 9px; color: var(--secondary-text-color, #888); opacity: 0.55; pointer-events: none; z-index: 10; }
         @keyframes pn-flow-fwd { to { stroke-dashoffset: -${dashTotal}; } }
         @keyframes pn-flow-rev { to { stroke-dashoffset: ${dashTotal}; } }
@@ -911,7 +933,8 @@ class PowerNexus extends HTMLElement {
         const css = this._svgToCss(meta.cx, meta.cy);
         const cssSize = meta.foSize * css.scale;
         const wrap = document.createElement('div');
-        wrap.style.cssText = `position:absolute;left:${(css.x - cssSize/2).toFixed(1)}px;top:${(css.y - cssSize/2).toFixed(1)}px;width:${cssSize.toFixed(1)}px;height:${cssSize.toFixed(1)}px;display:flex;align-items:center;justify-content:center;`;
+        wrap.className = `pn-icon-wrap pn-icon-${key}`;
+        wrap.style.cssText = `position:absolute;left:${(css.x - cssSize/2).toFixed(1)}px;top:${(css.y - cssSize/2).toFixed(1)}px;width:${cssSize.toFixed(1)}px;height:${cssSize.toFixed(1)}px;`;
         const haIcon = document.createElement('ha-icon');
         haIcon.setAttribute('icon', meta.icon);
         haIcon.style.cssText = `--mdc-icon-size:${meta.iconPx}px;color:${meta.iconColor};transform:scale(${meta.iconSc});transform-origin:50% 50%;`;
@@ -933,6 +956,7 @@ class PowerNexus extends HTMLElement {
       socRingBg: this.shadowRoot.querySelector(`.pn-node-soc-ring-bg-${i}`),
       socBar: this.shadowRoot.querySelector(`.pn-node-soc-bar-${i}`),
       socBarBg: this.shadowRoot.querySelector(`.pn-node-soc-bar-bg-${i}`),
+      iconWrap: this.shadowRoot.querySelector(`.pn-icon-node_${i}`),
     }));
 
     // Erst nach DOM-Cache aktualisieren – sonst landen Updates auf alten Elementen
