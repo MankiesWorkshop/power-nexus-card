@@ -108,7 +108,10 @@ nodes:
 | `subtract_output` | boolean | `false` | – | ✓ | Entität Output subtrahieren |
 | `soc_entity` | string | `""` | – | ✓ | Entität für Ladestand (SoC) |
 | `aux_entity` | string | `""` | – | ✓ | Zusatz-Entität (z.B. Tagesverbrauch) |
+| `aux_angle` | number | `0` | – | ✓ | Position der Zusatz-Entität (0–360°) |
 | `nexus_relevant` | boolean | `false` | – | ✓ | Für Nexus-Leistung relevant |
+| `show_name` | boolean | `true` | – | ✓ | Name auf der Karte anzeigen |
+| `icon_shift_y` | number | `0` | – | ✓ | Vertikaler Icon-Shift (px) |
 | `slot` | number | `0` | – | ✓ | Slot-Position (0–3) |
 | `x_position` | number | `-1` | – | ✓ | X-Position im Grid |
 | `y_position` | number | `0` | – | ✓ | Y-Position im Grid |
@@ -236,7 +239,10 @@ nodes:
 | `subtract_output` | boolean | `false` | – | ✓ | Subtract Entity Output |
 | `soc_entity` | string | `""` | – | ✓ | Entity for state of charge (SoC) |
 | `aux_entity` | string | `""` | – | ✓ | Auxiliary entity (e.g. daily consumption) |
+| `aux_angle` | number | `0` | – | ✓ | Aux entity position (0–360°) |
 | `nexus_relevant` | boolean | `false` | – | ✓ | Relevant for Nexus power sum |
+| `show_name` | boolean | `true` | – | ✓ | Show name on the card |
+| `icon_shift_y` | number | `0` | – | ✓ | Vertical icon shift (px) |
 | `slot` | number | `0` | – | ✓ | Slot position (0–3) |
 | `x_position` | number | `-1` | – | ✓ | X position in grid |
 | `y_position` | number | `0` | – | ✓ | Y position in grid |
@@ -364,7 +370,10 @@ nodes:
 | `subtract_output` | boolean | `false` | – | ✓ | 减去输出实体 |
 | `soc_entity` | string | `""` | – | ✓ | 荷电状态实体 (SoC) |
 | `aux_entity` | string | `""` | – | ✓ | 辅助实体（例如日消耗量） |
+| `aux_angle` | number | `0` | – | ✓ | 辅助实体位置 (0–360°) |
 | `nexus_relevant` | boolean | `false` | – | ✓ | 计入 Nexus 功率总和 |
+| `show_name` | boolean | `true` | – | ✓ | 在卡片上显示名称 |
+| `icon_shift_y` | number | `0` | – | ✓ | 垂直图标偏移 (px) |
 | `slot` | number | `0` | – | ✓ | 槽位 (0–3) |
 | `x_position` | number | `-1` | – | ✓ | 网格中 X 位置 |
 | `y_position` | number | `0` | – | ✓ | 网格中 Y 位置 |
