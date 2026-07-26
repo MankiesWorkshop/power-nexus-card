@@ -1,9 +1,9 @@
 // ─── Power Nexus Card ─────────────────────────────────────────────────────────
 // Home Assistant Lovelace Custom Card zur Visualisierung von Energieflüssen
-// Version 0.3.19
+// Version 0.4.0
 
-const CARD_VERSION = "0.3.19";
-console.log(`PowerNexusCard v${CARD_VERSION} geladen`, new Date().toLocaleTimeString());
+const CARD_VERSION = "0.4.0";
+console.debug(`PowerNexusCard v${CARD_VERSION} geladen`, new Date().toLocaleTimeString());
 
 // ─── Geometrie-Konstanten ─────────────────────────────────────────────────────
 const GEOM = {
@@ -20,7 +20,6 @@ const GEOM = {
   SIZE_M: 1.0,          // M-Faktor (Standardgröße)
   SIZE_L: 1.35,         // L-Faktor (135% der M-Größe)
   FRAME_HALF: 0.45,     // Gruppenrahmen-Halbe (×CELL) – halbe Kantenlänge des Rahmens
-  FRAME_OPACITY: 0.22,  // Rahmen-Deckkraft (rgba alpha)
   OFFSET_CIRCLE: 0.20,  // Text-Offset im Kreis-Mode (20% des Zwischenraums)
   OFFSET_BUTTON: 0.15,  // Text-Offset im Button-Mode (15% des Zwischenraums)
   SLOT_DIST: 0.22,      // Slot-Abstand vom Zellenmittelpunkt (×CELL)
@@ -62,7 +61,7 @@ class PowerNexus extends HTMLElement {
         // Migration: x/y → x_position/y_position
         if (n.x_position === undefined && n.x !== undefined) { n.x_position = n.x; delete n.x; }
         if (n.y_position === undefined && n.y !== undefined) { n.y_position = n.y; delete n.y; }
-        const node = { size: "M", slot: 0, invert_flow: false, subtract_output: false, hide_mode: "hide", fade_hide_edges: false, nexus_relevant: false, aux_entity: "", aux_bg_color: "#000000", aux_bg_transparent: false, bg_color: "#000000", bg_transparent: false, icon_color: "", power_color: "", aux_color: "", soc_color: "", name_color: "", name_size: 100, icon_size: 100, power_size: 100, aux_size: 100, soc_size: 100, soc_stroke_width: 5, ...n };
+        const node = { size: "M", slot: 0, invert_flow: false, subtract_output: false, hide_mode: "hide", fade_hide_edges: false, nexus_relevant: false, show_name: true, icon_shift_y: 0, aux_angle: 0, aux_entity: "", aux_bg_color: "#000000", aux_bg_transparent: false, bg_color: "#000000", bg_transparent: false, icon_color: "", power_color: "", aux_color: "", soc_color: "", name_color: "", name_size: 100, icon_size: 100, power_size: 100, aux_size: 100, soc_size: 100, soc_stroke_width: 5, ...n };
         node.slot = Math.max(0, Math.min(3, node.slot ?? 0));
         node.hide_threshold = Math.max(0, node.hide_threshold ?? 0);
         return node;
@@ -73,6 +72,8 @@ class PowerNexus extends HTMLElement {
     if (c.home.bg_opacity !== undefined) { c.home.bg_transparent = c.home.bg_opacity === 0; delete c.home.bg_opacity; }
     this.c = c;
     this._pcache = null; // Cache leeren bei Config-Wechsel
+    this._arrowCache = null; // Arrow-Cache leeren
+    this._cellGroups = null; // Zell-Gruppen neu berechnen
     // Render erst wenn Element im DOM sitzt
     if (this.isConnected) {
       this._render();
@@ -102,7 +103,7 @@ class PowerNexus extends HTMLElement {
     const r = fullWatt
       ? n.toFixed(0) + " W"
       : (Math.abs(n) < 1000 ? n.toFixed(0) + " W" : (n / 1000).toFixed(1) + " kW");
-    if (this._pcache.size < 80) this._pcache.set(ck, r);
+    if (this._pcache.size < 200) this._pcache.set(ck, r);
     return r;
   }
 
@@ -142,7 +143,9 @@ class PowerNexus extends HTMLElement {
         flow_animation: true,
         show_version: false,
         linien_staerke: 10,
-        knoten_name_farbe: "#ffffff"
+        knoten_name_farbe: "#ffffff",
+        frame_opacity: 22,
+        frame_color: ""
       },
       home: {
         name: "Nexus",
@@ -183,6 +186,8 @@ class PowerNexus extends HTMLElement {
             { name: "flow_animation", selector: { boolean: {} } },
             { name: "show_version", selector: { boolean: {} } },
             { name: "linien_staerke", selector: { number: { min: 2, max: 30, step: 1 } } },
+            { name: "frame_opacity", selector: { number: { min: 0, max: 100, step: 1 } } },
+            { name: "frame_color", selector: { text: { type: "color" } } },
             { name: "knoten_name_farbe", selector: { text: { type: "color" } } }
           ]
         },
@@ -210,6 +215,7 @@ class PowerNexus extends HTMLElement {
   getCardSize() { return 3; }
 
   _toHex(v, fallback = "#ffab40") {
+    if (v === "") return "";
     if (!v) return fallback;
     if (typeof v === "string") {
       // Theme-Variable (var(--...)) unverändert durchreichen
@@ -223,6 +229,7 @@ class PowerNexus extends HTMLElement {
   _updateValues() {
     const root = this.shadowRoot;
     if (!root) return;
+    const allNodes = this.c?.nodes || [];
 
     const homeEl = this._homeEl;
     if (homeEl) {
@@ -237,7 +244,7 @@ class PowerNexus extends HTMLElement {
       if (homeEl._pnLast !== val) { homeEl._pnLast = val; homeEl.textContent = val; }
     }
 
-    (this.c?.nodes || []).forEach((n, i) => {
+    allNodes.forEach((n, i) => {
       const cache = this._nodeCache?.[i];
       if (!cache) return;
       const el = cache.powerEl;
@@ -254,7 +261,7 @@ class PowerNexus extends HTMLElement {
         if (anyNA) {
           if (el._pnLast !== 'N/A') { el._pnLast = 'N/A'; el.textContent = 'N/A'; }
         } else if (anySet) {
-          const pwrTxt = this._fmtPower(this._calcNetPower(v1, v2, n.subtract_output));
+          const pwrTxt = this._fmtPower(cache._rawPower);
           if (el._pnLast !== pwrTxt) { el._pnLast = pwrTxt; el.textContent = pwrTxt; }
         } else {
           const txt = (n.entity_input || n.entity_output) ? '?' : ''; // Entität konfiguriert, aber nicht gefunden
@@ -262,15 +269,15 @@ class PowerNexus extends HTMLElement {
         }
         // Automatisch ausblenden/ausgrauen unterhalb Schwellwert (nicht bei N/A)
         if (ng) {
-          const rawPower = this._calcNetPower(v1, v2, n.subtract_output);
+          const rawPower = cache._rawPower;
           const threshold = parseFloat(n.hide_threshold) || 0;
           ng.classList.remove('pn-hidden', 'pn-faded');
           if (!anyNA && n.auto_hide && threshold > 0 && Math.abs(rawPower) < threshold) {
             const mode = n.hide_mode || 'hide';
-          const targetCls = mode === 'fade' ? 'pn-faded' : 'pn-hidden';
-          const otherCls = mode === 'fade' ? 'pn-hidden' : 'pn-faded';
-          if (ng.classList.contains(otherCls)) ng.classList.remove(otherCls);
-          if (!ng.classList.contains(targetCls)) ng.classList.add(targetCls);
+            const targetCls = mode === 'fade' ? 'pn-faded' : 'pn-hidden';
+            const otherCls = mode === 'fade' ? 'pn-hidden' : 'pn-faded';
+            if (ng.classList.contains(otherCls)) ng.classList.remove(otherCls);
+            if (!ng.classList.contains(targetCls)) ng.classList.add(targetCls);
           }
           // Icon im Overlay mit aus-/einblenden
           const iw = cache.iconWrap || this.shadowRoot.querySelector(`.pn-icon-node_${i}`);
@@ -367,80 +374,66 @@ class PowerNexus extends HTMLElement {
     });
 
     // Nexus-Leistung: Summe aller nexus_relevant-Knoten → überschreibt Home-Entität
-    const nexusNodes = (this.c?.nodes || []).filter(n => n.nexus_relevant === true);
+    // N/A-Knoten werden ignoriert; sind alle N/A → 0 W
+    const nexusNodes = allNodes.filter(n => n.nexus_relevant === true);
     if (nexusNodes.length > 0 && homeEl) {
       let nexusSum = 0;
-      let hasNA = false;
       nexusNodes.forEach(n => {
-        const i = (this.c?.nodes || []).indexOf(n);
+        const i = allNodes.indexOf(n);
         const cache = this._nodeCache?.[i];
         if (cache && cache._rawPower !== null && cache._rawPower !== undefined) {
           nexusSum += cache._rawPower;
-        } else if (cache && cache._rawPower === null) {
-          hasNA = true;
         }
       });
-      const nexusVal = hasNA ? 'N/A' : this._fmtPower(nexusSum);
+      const nexusVal = this._fmtPower(nexusSum);
       if (homeEl._pnLast !== nexusVal) { homeEl._pnLast = nexusVal; homeEl.textContent = nexusVal; }
-    } else if (nexusNodes.length === 0 && homeEl) {
-      // Fallback: normale Home-Entity (bereits oben gesetzt, hier nur bestätigen)
-      // Falls oben noch nicht gesetzt (kein nexus aber Home-Entity vorhanden), nachholen
-      const eid = this.c?.home?.entity;
-      if (eid && this._hass?.states[eid]) {
-        const v = parseFloat(this._hass.states[eid].state);
-        if (!isNaN(v)) {
-          const val = this._fmtPower(v);
-          if (homeEl._pnLast !== val) { homeEl._pnLast = val; homeEl.textContent = val; }
-        }
-      }
     }
 
-    // Zell-Summen & Hidden-Status einmalig vorberechnen (statt pro Edge zu wiederholen)
-    const allNodes = this.c?.nodes || [];
+    // Zell-Summen & Hidden-Status (mit gecachten Referenzen)
     const cellSums = new Map();
     const cellAllHidden = new Map();
     const cellEdgesHidden = new Map();
     const cellEdgesFaded = new Map();
-    const cellGroups = {};
-    allNodes.forEach(n => {
-      const ck = `${n.x_position??0},${n.y_position??0}`;
-      if (!cellGroups[ck]) { cellGroups[ck] = []; cellSums.set(ck, 0); }
-      cellGroups[ck].push(n);
-      if (!n.entity_input && !n.entity_output) return;
-      const v1 = (n.entity_input && this._hass?.states[n.entity_input]) ? parseFloat(this._hass.states[n.entity_input].state) || 0 : 0;
-      const v2 = (n.entity_output && this._hass?.states[n.entity_output]) ? parseFloat(this._hass.states[n.entity_output].state) || 0 : 0;
-      const net = this._calcNetPower(v1, v2, n.subtract_output);
-      cellSums.set(ck, cellSums.get(ck) + (n.invert_flow ? -net : net));
+    const cellGroups = this._cellGroups || {};
+    const cellKeys = this._cellGroupKeys || Object.keys(cellGroups);
+    // _pn_below direkt aus rawPower der Hauptschleife ableiten (spart _isNodeBelowThreshold)
+    allNodes.forEach((n, i) => {
+      const rawPower = this._nodeCache?.[i]?._rawPower;
+      const threshold = parseFloat(n.hide_threshold) || 0;
+      n._pn_below = n.auto_hide && threshold > 0 && rawPower !== null && rawPower !== undefined && Math.abs(rawPower) < threshold;
     });
-    Object.entries(cellGroups).forEach(([ck, cNodes]) => {
-      const hidden = cNodes.length > 0 && cNodes.every(n => {
-        if ((n.hide_mode || 'hide') === 'fade') return false;
-        return this._isNodeBelowThreshold(n);
+    // Zell-Summen berechnen
+    cellKeys.forEach(ck => {
+      const cNodes = cellGroups[ck];
+      let sum = 0;
+      cNodes.forEach(n => {
+        if (!n.entity_input && !n.entity_output) return;
+        const i = allNodes.indexOf(n);
+        const rawPower = this._nodeCache?.[i]?._rawPower;
+        if (rawPower !== null && rawPower !== undefined) {
+          sum += n.invert_flow ? -rawPower : rawPower;
+        }
       });
-      cellAllHidden.set(ck, hidden);
-      // Kanten ausblenden auch bei faded + fade_hide_edges
-      const edgesHidden = cNodes.length > 0 && cNodes.every(n => {
-        if (!this._isNodeBelowThreshold(n)) return false;
+      cellSums.set(ck, sum);
+      // Hidden/Faded-Status in einem Durchlauf berechnen
+      let allBelow = true, allHide = true, allFadeHideEdges = true;
+      for (const n of cNodes) {
+        if (!n._pn_below) { allBelow = false; break; }
         const mode = n.hide_mode || 'hide';
-        if (mode === 'hide') return true;
-        if (mode === 'fade') return n.fade_hide_edges === true;
-        return false;
-      });
-      cellEdgesHidden.set(ck, edgesHidden);
-      // Kanten ausgrauen wenn ALLE Knoten faded (nicht hide) und nicht alle fade_hide_edges
-      const edgesFaded = cNodes.length > 0 && cNodes.every(n => this._isNodeBelowThreshold(n))
-        && !cNodes.some(n => (n.hide_mode || 'hide') === 'hide')
-        && !cNodes.every(n => n.fade_hide_edges === true);
-      cellEdgesFaded.set(ck, edgesFaded);
+        if (mode !== 'hide') allHide = false;
+        if (n.fade_hide_edges !== true) allFadeHideEdges = false;
+      }
+      cellAllHidden.set(ck, cNodes.length > 0 && cNodes.every(n => (n.hide_mode || 'hide') !== 'fade' && n._pn_below));
+      cellEdgesHidden.set(ck, allBelow && (!allHide || (allHide && allFadeHideEdges)));
+      cellEdgesFaded.set(ck, allBelow && !allHide && !allFadeHideEdges);
     });
 
-    root.querySelectorAll('.pn-edge').forEach((edge, eIdx) => {
+    (this._edgeEls || []).forEach((edge, eIdx) => {
       const cellKey = edge.dataset.cell;
       if (!cellKey) return;
       const sum = cellSums.get(cellKey) || 0;
       if (cellAllHidden.get(cellKey) || cellEdgesHidden.get(cellKey)) { if (!edge.classList.contains('pn-hidden')) edge.classList.add('pn-hidden'); return; }
       edge.classList.remove('rev', 'still', 'pn-hidden', 'pn-faded');
-      // Ausgegraute Kanten wenn Knoten faded ohne fade_hide_edges
       if (cellEdgesFaded.get(cellKey)) {
         if (!edge.classList.contains('pn-faded')) edge.classList.add('pn-faded');
         return;
@@ -449,59 +442,60 @@ class PowerNexus extends HTMLElement {
       edge.classList.remove('pn-hidden');
       if (sum > 0) { if (!edge.classList.contains('rev')) edge.classList.add('rev'); }
       else { edge.classList.remove('rev'); }
-      // Statische Pfeile vs. animierte Linien
       const flowAnimOff = this.c?.general?.flow_animation === false;
+      const ac = this._edgeArrowCache[eIdx];
       if (flowAnimOff) {
         if (!edge.classList.contains('pn-static')) edge.classList.add('pn-static');
         edge.setAttribute('stroke-dasharray', 'none');
         edge.setAttribute('stroke', 'none');
-        const fwdG = root.querySelector(`.pn-arrow-fwd-${eIdx}`);
-        const revG = root.querySelector(`.pn-arrow-rev-${eIdx}`);
         if (sum > 0) {
-          if (fwdG) fwdG.style.display = '';
-          if (revG) revG.style.display = 'none';
+          if (ac?.fwdG) ac.fwdG.style.display = '';
+          if (ac?.revG) ac.revG.style.display = 'none';
         } else {
-          if (fwdG) fwdG.style.display = 'none';
-          if (revG) revG.style.display = '';
+          if (ac?.fwdG) ac.fwdG.style.display = 'none';
+          if (ac?.revG) ac.revG.style.display = '';
         }
       } else {
         edge.classList.remove('pn-static');
-        edge.setAttribute('stroke-dasharray', edge.dataset.dash);
-        edge.setAttribute('stroke', edge.dataset.stroke);
-        const fwdG = root.querySelector(`.pn-arrow-fwd-${eIdx}`);
-        const revG = root.querySelector(`.pn-arrow-rev-${eIdx}`);
-        if (fwdG) fwdG.style.display = 'none';
-        if (revG) revG.style.display = 'none';
+        const ed = this._edgeDataMap.get(eIdx);
+        if (ed) {
+          edge.setAttribute('stroke-dasharray', ed.dash);
+          edge.setAttribute('stroke', ed.stroke);
+        }
+        if (ac?.fwdG) ac.fwdG.style.display = 'none';
+        if (ac?.revG) ac.revG.style.display = 'none';
       }
-      // Flussgeschwindigkeit: wertabhängig (50W→1,8s, 4000W→0,2s) oder fix 2s
       if (this.c?.general?.flow_speed_by_value !== false) {
         const absSum = Math.abs(sum);
-        const dur = (Math.max(0.2, Math.min(3, 2 * Math.exp(-absSum / 600)))).toFixed(2) + 's';
+        // Lookup-Tabelle statt Math.exp (schneller, visuell identisch)
+        let dur;
+        if (absSum >= 900) dur = '0.2s';
+        else if (absSum >= 600) dur = '0.3s';
+        else if (absSum >= 300) dur = '0.6s';
+        else if (absSum >= 100) dur = '1.2s';
+        else dur = '2.0s';
         if (edge._pnDur !== dur) { edge._pnDur = dur; edge.style.animationDuration = dur; }
       } else {
         if (edge._pnDur !== '0.8s') { edge._pnDur = '0.8s'; edge.style.animationDuration = '0.8s'; }
       }
     });
 
-    // Zellen-Frames ausblenden wenn alle Knoten der Zelle versteckt sind
-    root.querySelectorAll('.pn-cell-frame').forEach(frame => {
+    // Zellen-Frames (gecachte Referenzen)
+    (this._frameEls || []).forEach(frame => {
       const cellKey = frame.dataset.cell;
       if (!cellKey) return;
-      const [gx, gy] = cellKey.split(',').map(Number);
-      const cellNodes = (this.c?.nodes || []).filter(n => (n.x_position??0) === gx && (n.y_position??0) === gy);
-      if (cellNodes.length === 0) return;
-      const allAutoHide = cellNodes.every(n => n.auto_hide);
-      const anyVisible = cellNodes.some(n => {
-        if (!n.auto_hide) return true;
-        if ((n.hide_mode || 'hide') === 'fade') return true;
-        return !this._isNodeBelowThreshold(n);
-      });
+      const cNodes = cellGroups[cellKey];
+      if (!cNodes || cNodes.length === 0) return;
+      const allAutoHide = cNodes.every(n => n.auto_hide);
+      const anyVisible = cNodes.some(n => !n.auto_hide || (n.hide_mode || 'hide') === 'fade' || !n._pn_below);
       if (allAutoHide && !anyVisible) {
         if (!frame.classList.contains('pn-hidden')) frame.classList.add('pn-hidden');
       } else {
         frame.classList.remove('pn-hidden');
       }
     });
+    // Threshold-Cache aufräumen
+    allNodes.forEach(n => { n._pn_below = undefined; });
   }
 
   // Strahl-Rechteck-Intersection
@@ -579,6 +573,10 @@ class PowerNexus extends HTMLElement {
 
   // Erzeugt Pfeil-Polygone (▷-Form) entlang eines SVG-Pfads
   _generateArrows(pathD, size, color, reverse) {
+    const cacheKey = `${pathD}|${size}|${color}|${reverse}`;
+    if (!this._arrowCache) this._arrowCache = new Map();
+    const cached = this._arrowCache.get(cacheKey);
+    if (cached !== undefined) return cached;
     const ptsStr = pathD.replace(/^M/, '').split(' L');
     let pts = ptsStr.map(s => { const [x,y] = s.split(',').map(Number); return {x,y}; });
     if (pts.length < 2) return '';
@@ -604,6 +602,7 @@ class PowerNexus extends HTMLElement {
         arrows += `<polygon points="${tipX.toFixed(1)},${tipY.toFixed(1)} ${(baseX+px).toFixed(1)},${(baseY+py).toFixed(1)} ${(baseX-px).toFixed(1)},${(baseY-py).toFixed(1)}" fill="${color}" opacity="0.85"/>`;
       }
     }
+    if (this._arrowCache.size < 50) this._arrowCache.set(cacheKey, arrows);
     return arrows;
   }
 
@@ -618,6 +617,8 @@ class PowerNexus extends HTMLElement {
     const scale = parseFloat(g.knoten_zoom) || 1.0;
     const button = g.button_mode === true;
     const lineW = parseFloat(g.linien_staerke) || 10;
+    const frameOpacity = (parseFloat(g.frame_opacity) || 22) / 100; // 0–100 → 0.00–1.00
+    const frameColor = g.frame_color ? this._toHex(g.frame_color) : 'var(--secondary-text-color, rgba(128,128,128,0.7))';
     const nodeNameColor = g.knoten_name_farbe || '#ffffff';
     const flowAnim = g.flow_animation !== false; // Default: true (animiert)
     const dashTotal = lineW * (1 + GEOM.EDGE_DASH); // Musterlänge für nahtlose Dash-Animation
@@ -718,6 +719,7 @@ class PowerNexus extends HTMLElement {
     const nodeHex = nodes.map(n => this._toHex(n.color, '#4fc3f7'));
 
     // Verbindungslinien pro Zelle (mit Routing um Knoten herum)
+    this._edgeDataMap = new Map(); // Safari-Fix: dataset kann url(#...) beschädigen
     const edgeLines = [];
     const edgeGrads = [];
     const edgeArrowGroups = [];
@@ -860,7 +862,8 @@ class PowerNexus extends HTMLElement {
         const gradId = `pn-eg-${uid}-${cellKey.replace(',','_')}-${target}`;
         edgeGrads.push(`<linearGradient id="${gradId}" x1="${gx1}" y1="${gy1}" x2="${gx2}" y2="${gy2}" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="${lColor}"/><stop offset="100%" stop-color="${tgtColor}"/></linearGradient>`);
         const dashVal = `${lineW*GEOM.EDGE_DASH},${lineW}`;
-        edgeLines.push(`<path class="pn-edge" data-edge="${edgeCnt}" data-cell="${cellKey}" data-dash="${dashVal}" data-stroke="url(#${gradId})" d="${pathD}" fill="none" stroke="url(#${gradId})" stroke-width="${lineW}" opacity="${GEOM.EDGE_OPACITY}" stroke-dasharray="${dashVal}" stroke-linecap="butt" stroke-linejoin="round"/>`);
+        edgeLines.push(`<path class="pn-edge" data-edge="${edgeCnt}" data-cell="${cellKey}" d="${pathD}" fill="none" stroke="url(#${gradId})" stroke-width="${lineW}" opacity="${GEOM.EDGE_OPACITY}" stroke-dasharray="${dashVal}" stroke-linecap="butt" stroke-linejoin="round"/>`);
+        this._edgeDataMap.set(edgeCnt, { dash: dashVal, stroke: `url(#${gradId})` });
         if (!flowAnim) {
           edgeArrowGroups.push({
             fwd: this._generateArrows(pathD, lineW, lColor),
@@ -877,7 +880,7 @@ class PowerNexus extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       <style>
-        :host { display: block; height: 100%; box-sizing: border-box; font-family: Roboto, sans-serif; background: var(--ha-card-background, var(--card-background-color)); border-radius: var(--ha-card-border-radius, 12px); border: 1px solid var(--ha-card-border-color, var(--divider-color, rgba(128,128,128,0.3))); box-shadow: var(--ha-card-box-shadow, none); }
+        :host { display: block; height: 100%; min-height: 100px; /* verhindert Layout-Shift beim Laden */ box-sizing: border-box; font-family: Roboto, sans-serif; background: var(--ha-card-background, var(--card-background-color)); border-radius: var(--ha-card-border-radius, 12px); border: 1px solid var(--ha-card-border-color, var(--divider-color, rgba(128,128,128,0.3))); box-shadow: var(--ha-card-box-shadow, none); }
         .pn-container { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
         .pn-card-inner { position: relative; width: 88px; height: 88px; transform: scale(${scale}); transform-origin: center; }
         .pn-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: visible; }
@@ -887,10 +890,11 @@ class PowerNexus extends HTMLElement {
         .pn-home-power { text-anchor: middle; font-weight: 600; }
         .pn-home-label { text-anchor: middle; }
         .pn-btn-highlight { fill: rgba(255,255,255,0.20); }
-        .pn-cell-frame { stroke: rgba(255,255,255,${GEOM.FRAME_OPACITY}); stroke-width: 1.2; stroke-dasharray: 4,4; fill: none; }
+        .pn-cell-frame { stroke: ${frameColor}; stroke-width: 1.2; stroke-dasharray: 4,4; fill: none; opacity: ${frameOpacity.toFixed(2)}; }
         .pn-node-group { cursor: pointer; }
         /* Flusslinien-Animation: forward = aus Knoten heraus, reverse = in Knoten hinein */
         .pn-edge { animation: pn-flow-fwd 1s linear infinite; }
+        .pn-edge:not(.pn-hidden):not(.pn-static):not(.pn-faded) { will-change: stroke-dashoffset; }
         .pn-edge.rev { animation: pn-flow-rev 1s linear infinite; }
         .pn-edge.still { animation: none; }
         .pn-edge.pn-static { animation: none; }
@@ -902,7 +906,7 @@ class PowerNexus extends HTMLElement {
         .pn-icon-wrap.pn-hidden { display: none; }
         .pn-icon-wrap.pn-faded { opacity: 0.25; }
         .pn-icon-wrap { display: flex; align-items: center; justify-content: center; }
-        .pn-version-badge { position: absolute; top: 4px; left: 6px; font-size: 9px; color: var(--secondary-text-color, #888); opacity: 0.55; pointer-events: none; z-index: 10; }
+        .pn-version-badge { position: absolute; top: 4px; left: 6px; font-size: 9px; color: var(--secondary-text-color, #aaa); opacity: 0.72; pointer-events: none; z-index: 10; }
         @keyframes pn-flow-fwd { to { stroke-dashoffset: -${dashTotal}; } }
         @keyframes pn-flow-rev { to { stroke-dashoffset: ${dashTotal}; } }
       </style>
@@ -914,7 +918,7 @@ class PowerNexus extends HTMLElement {
             ${gradsSvg}
             ${edgesSvg}
             ${arrowsSvg}
-            ${this._auxBoxes.length ? `<g class="pn-aux-boxes">${this._auxBoxes.map(b => `<g transform="translate(${b.cx},${b.cy})">${b.html}</g>`).join('')}</g>` : ''}
+            ${this._auxBoxes.length ? `<g class="pn-aux-boxes">${this._auxBoxes.map(b => `<g transform="translate(${b.cx},${b.cy}) rotate(${b.angle || 0})">${b.html}</g>`).join('')}</g>` : ''}
             ${nodes.length ? `<g class="pn-nodes">${nodeSvgs}</g>` : ''}
             ${groupFrames ? `<g class="pn-cell-frames">${groupFrames}</g>` : ''}
             ${this._buildHomeSvg()}
@@ -931,10 +935,11 @@ class PowerNexus extends HTMLElement {
     if (iconOverlay && this._iconMeta) {
       Object.entries(this._iconMeta).forEach(([key, meta]) => {
         const css = this._svgToCss(meta.cx, meta.cy);
+        const shiftY = meta.shiftY || 0;
         const cssSize = meta.foSize * css.scale;
         const wrap = document.createElement('div');
         wrap.className = `pn-icon-wrap pn-icon-${key}`;
-        wrap.style.cssText = `position:absolute;left:${(css.x - cssSize/2).toFixed(1)}px;top:${(css.y - cssSize/2).toFixed(1)}px;width:${cssSize.toFixed(1)}px;height:${cssSize.toFixed(1)}px;`;
+        wrap.style.cssText = `position:absolute;left:${(css.x - cssSize/2).toFixed(1)}px;top:${(css.y - cssSize/2 + shiftY).toFixed(1)}px;width:${cssSize.toFixed(1)}px;height:${cssSize.toFixed(1)}px;`;
         const haIcon = document.createElement('ha-icon');
         haIcon.setAttribute('icon', meta.icon);
         haIcon.style.cssText = `--mdc-icon-size:${meta.iconPx}px;color:${meta.iconColor};transform:scale(${meta.iconSc});transform-origin:50% 50%;`;
@@ -958,6 +963,28 @@ class PowerNexus extends HTMLElement {
       socBarBg: this.shadowRoot.querySelector(`.pn-node-soc-bar-bg-${i}`),
       iconWrap: this.shadowRoot.querySelector(`.pn-icon-node_${i}`),
     }));
+
+    // Edge- und Frame-Referenzen einmalig cachen (statt querySelectorAll bei jedem Update)
+    this._edgeEls = Array.from(this.shadowRoot.querySelectorAll('.pn-edge'));
+    this._frameEls = Array.from(this.shadowRoot.querySelectorAll('.pn-cell-frame'));
+    this._edgeArrowCache = {};
+    const totalEdges = this._edgeDataMap.size;
+    for (let i = 0; i < totalEdges; i++) {
+      this._edgeArrowCache[i] = {
+        fwdG: this.shadowRoot.querySelector(`.pn-arrow-fwd-${i}`),
+        revG: this.shadowRoot.querySelector(`.pn-arrow-rev-${i}`)
+      };
+    }
+    // Zell-Gruppen vorberechnen (ändert sich nur bei Config-Wechsel)
+    if (!this._cellGroups) {
+      this._cellGroups = {};
+      nodes.forEach(n => {
+        const ck = `${n.x_position??0},${n.y_position??0}`;
+        if (!this._cellGroups[ck]) this._cellGroups[ck] = [];
+        this._cellGroups[ck].push(n);
+      });
+      this._cellGroupKeys = Object.keys(this._cellGroups);
+    }
 
     // Erst nach DOM-Cache aktualisieren – sonst landen Updates auf alten Elementen
     this._updateValues();
@@ -992,7 +1019,7 @@ class PowerNexus extends HTMLElement {
       }
       // Click-Handler: SoC – öffnet soc_entity-Verlauf
       const socEl = this.shadowRoot.querySelector(`.pn-node-soc-${i}`);
-      if (socEl && n.soc_entity) {
+      if (socEl && n.soc_entity && this._hass?.states[n.soc_entity]) {
         socEl.style.cursor = 'pointer';
         socEl.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -1072,16 +1099,20 @@ class PowerNexus extends HTMLElement {
     const auxStroke = ctx.button ? `stroke="url(#pn-btn-stroke-${ctx.uid})" stroke-width="1.0"` : `stroke="${auxColor}" stroke-width="2"`;
     const auxPath = `M${auxBoxX},${auxBoxY} L${auxBoxX},${auxBoxY+auxBoxH-auxCr} a${auxCr},${auxCr} 0 0,0 ${auxCr},${auxCr} L${auxBoxX+auxBoxW-auxCr},${auxBoxY+auxBoxH} a${auxCr},${auxCr} 0 0,0 ${auxCr},${-auxCr} L${auxBoxX+auxBoxW},${auxBoxY}`;
     const auxValY = ctx.button ? 0.50 : 0.72;
-    const auxSvgInner = `<path d="${auxPath}" ${auxFill} ${auxStroke} stroke-linejoin="round"/><text class="pn-node-aux-${i}" x="0" y="${auxBoxY + auxBoxH*auxValY}" font-size="${auxBoxFont}" fill="${auxColor}" text-anchor="middle" dy="0.35em"></text>`;
+    const auxTextY = auxBoxY + auxBoxH * auxValY;
+    // Text auf Kopf drehen wenn Aux-Box zwischen 91° und 269° steht
+    const auxAngle = n.aux_angle || 0;
+    const auxTextFlip = auxAngle > 90 && auxAngle < 270 ? ` transform="rotate(180, 0, ${auxTextY.toFixed(1)})"` : '';
+    const auxSvgInner = `<path d="${auxPath}" ${auxFill} ${auxStroke} stroke-linejoin="round"/><text class="pn-node-aux-${i}" x="0" y="${auxTextY.toFixed(1)}" font-size="${auxBoxFont}" fill="${auxColor}" text-anchor="middle" dy="0.35em"${auxTextFlip}></text>`;
     // Aux-Box für separate Z-Order vormerken
-    if (this._auxBoxes) this._auxBoxes.push({ cx, cy, html: `<g class="pn-node-aux-group-${i}" style="display:none">${auxSvgInner}</g>` });
+    if (this._auxBoxes) this._auxBoxes.push({ cx, cy, html: `<g class="pn-node-aux-group-${i}" style="display:none">${auxSvgInner}</g>`, angle: auxAngle });
     // Icon-Metadaten für DOM-API-Erstellung speichern (Safari-Kompatibilität)
-    if (this._iconMeta) this._iconMeta[`node_${i}`] = { icon: nIcon, iconSc, iconPx, iconColor, foSize, cx, cy };
+    if (this._iconMeta) this._iconMeta[`node_${i}`] = { icon: nIcon, iconSc, iconPx, iconColor, foSize, cx, cy, shiftY: n.icon_shift_y || 0 };
     return `
         <g class="pn-node-group pn-node-${i}" transform="translate(${cx},${cy})">
           ${shapeEl}
           ${highlightEl}
-          <text class="pn-node-label" x="0" y="${labelY}" font-size="${nameFontSize}" fill="${nameColor}" text-anchor="middle">${_htmlEscape(nName)}</text>
+          <text class="pn-node-label" x="0" y="${labelY}" font-size="${nameFontSize}" fill="${nameColor}" text-anchor="middle"${n.show_name === false ? ' style="display:none"' : ''}>${_htmlEscape(nName)}</text>
           <text class="pn-node-power-${i}" x="0" y="${powerY}" font-size="${powerFontSize}" fill="${powerColor}" text-anchor="middle" font-weight="600"></text>
           <text class="pn-node-soc-${i}" x="${foOff - 8}" y="0" font-size="${Math.round(baseFontSize * nodeSocMul * 0.75)}" fill="${socColor}" text-anchor="start" dy="0.3em" opacity="0.85"></text>
           ${ctx.button
@@ -1127,6 +1158,10 @@ const EDITOR_LANG = {
     fullWattDisplay: 'Immer volle Watt-Anzeige',
     flowAnimation: 'Fluss-Animation',
     showVersion: 'Version anzeigen',
+    showName: 'Name anzeigen',
+    iconShiftY: 'Vertikaler Icon-Shift (px)',
+    frameOpacity: 'Subknoten Rahmen-Transparenz',
+    frameColor: 'Subknoten Rahmen-Farbe',
     nodeNameColor: 'Farbe für Knotenname',
     name: 'Name', icon: 'Icon', color: 'Rahmen', homeEntity: 'Entität',
     homeSourceEntity: 'Quelle: Entität', homeSourceNexus: 'Quelle: Summe der Nexus-Knoten',
@@ -1142,6 +1177,7 @@ const EDITOR_LANG = {
     socColor: 'Ladestand', nameColor: 'Name',
     bgColor: 'Hintergrund', bgTransparent: 'Transparent', bgOpacity: 'Deckkraft',
     nameSize: 'Schrift Name', iconSize: 'Icon-Größe', powerSize: 'Schrift Entität', auxSize: 'Schrift Zusatz', socSize: 'Schrift Ladestand', socStrokeWidth: 'Dicke SoC-Grafik',
+    auxAngle: 'Position Zusatz-Entität (°)',
     xPos: 'X-Position', yPos: 'Y-Position',
     connections: 'Verbindungen', addConn: '+ Verbindung', delConn: 'Verbindung entfernen',
     invertFlow: 'Flussrichtung invertieren',
@@ -1166,6 +1202,10 @@ const EDITOR_LANG = {
     fullWattDisplay: 'Always show full Watts',
     flowAnimation: 'Flow Animation',
     showVersion: 'Show Version',
+    showName: 'Show name',
+    iconShiftY: 'Vertical Icon Shift (px)',
+    frameOpacity: 'Sub-node Frame Opacity',
+    frameColor: 'Sub-node Frame Color',
     nodeNameColor: 'Color for Node Name',
     name: 'Name', icon: 'Icon', color: 'Frame', homeEntity: 'Entity',
     homeSourceEntity: 'Source: Entity', homeSourceNexus: 'Source: Sum of nexus nodes',
@@ -1181,6 +1221,7 @@ const EDITOR_LANG = {
     socColor: 'SoC', nameColor: 'Name',
     bgColor: 'Background', bgTransparent: 'Transparent', bgOpacity: 'Opacity',
     nameSize: 'Font Name', iconSize: 'Icon Size', powerSize: 'Font Entity', auxSize: 'Font Aux', socSize: 'Font SoC', socStrokeWidth: 'SoC Graphic Thickness',
+    auxAngle: 'Aux Entity Position (°)',
     xPos: 'X Position', yPos: 'Y Position',
     connections: 'Connections', addConn: '+ Connection', delConn: 'Remove connection',
     invertFlow: 'Invert flow direction',
@@ -1278,8 +1319,21 @@ class PowerNexusEditor extends HTMLElement {
       if (n.y_position === undefined && n.y !== undefined) { n.y_position = n.y; delete n.y; }
     });
     // Fehlende Properties pro Node mit Defaults belegen
-    this._config.nodes.forEach(n => { if (!n.connections) n.connections = []; if (!n.size) n.size = "M"; if (n.slot === undefined) n.slot = 0; if (n.invert_flow === undefined) n.invert_flow = false; if (n.subtract_output === undefined) n.subtract_output = false; if (!n.hide_mode) n.hide_mode = "hide"; });
+    this._config.nodes.forEach(n => { if (!n.connections) n.connections = []; if (!n.size) n.size = "M"; if (n.slot === undefined) n.slot = 0; if (n.invert_flow === undefined) n.invert_flow = false; if (n.subtract_output === undefined) n.subtract_output = false; if (!n.hide_mode) n.hide_mode = "hide"; if (n.show_name === undefined) n.show_name = true; if (n.icon_shift_y === undefined) n.icon_shift_y = 0; if (n.aux_angle === undefined) n.aux_angle = 0; });
+    if (!this._pickerCache) this._pickerCache = {};
     this._render();
+  }
+
+  // Picker aus Cache holen oder neu erstellen (Safari-Fix: verwaiste Dropdowns)
+  _ensurePicker(key, wrapId, createFn) {
+    let picker = this._pickerCache[key];
+    if (!picker) {
+      picker = createFn();
+      this._pickerCache[key] = picker;
+    }
+    const wrap = this.shadowRoot.getElementById(wrapId);
+    if (wrap && picker.parentNode !== wrap) wrap.appendChild(picker);
+    return picker;
   }
 
   _fireChange(immediate) {
@@ -1314,6 +1368,9 @@ class PowerNexusEditor extends HTMLElement {
       hide_mode: "hide",
       fade_hide_edges: false,
       nexus_relevant: false,
+      show_name: true,
+      icon_shift_y: 0,
+      aux_angle: 0,
       aux_entity: "",
       aux_bg_color: "#000000",
       aux_bg_transparent: false,
@@ -1330,10 +1387,10 @@ class PowerNexusEditor extends HTMLElement {
       aux_size: 100,
       hide_threshold: 0,
       soc_entity: "",
-      entity: "",
-      entity2: "",
+      entity_input: "",
+      entity_output: "",
       connections: [],
-      x, y
+      x_position: x, y_position: y
     });
     this._fireChange(true);
     this._render();
@@ -1341,6 +1398,10 @@ class PowerNexusEditor extends HTMLElement {
 
   _removeNode(idx) {
     this._config.nodes.splice(idx, 1);
+    // Picker-Cache für alle Knoten leeren – Indizes verschieben sich
+    if (this._pickerCache) {
+      Object.keys(this._pickerCache).forEach(k => { if (k.startsWith('node-')) delete this._pickerCache[k]; });
+    }
     this._config.nodes.forEach(n => {
       (n.connections || []).forEach(conn => {
         const t = parseInt(conn.target);
@@ -1528,6 +1589,8 @@ class PowerNexusEditor extends HTMLElement {
     const zoomVal = parseFloat(c.general?.knoten_zoom) || 1.0;
     const abstandVal = parseFloat(c.general?.knoten_abstand) || 195;
     const linienVal = parseFloat(c.general?.linien_staerke) || 10;
+    const frameOpacityVal = parseFloat(c.general?.frame_opacity) || 22;
+    const frameColorVal = c.general?.frame_color || '';
     const buttonOn = c.general?.button_mode === true;
     const speedByVal = c.general?.flow_speed_by_value !== false; // Default: true
     const socDisplay = c.general?.soc_display || 'text';
@@ -1549,6 +1612,13 @@ class PowerNexusEditor extends HTMLElement {
         <input type="range" min="2" max="30" step="1" id="pn-linien-staerke" value="${linienVal}">
         <span class="pn-ed-slider-val" id="pn-linien-val">${linienVal}</span>
       </div>
+      <label class="pn-ed-lbl">${this._t('frameOpacity')}</label>
+      <div class="pn-ed-slider">
+        <input type="range" min="0" max="100" step="1" id="pn-frame-opacity" value="${frameOpacityVal}">
+        <span class="pn-ed-slider-val" id="pn-frame-opacity-val">${frameOpacityVal}%</span>
+      </div>
+      <label class="pn-ed-lbl">${this._t('frameColor')}</label>
+      <input class="pn-ed-inp" type="color" id="pn-frame-color" value="${_htmlEscape(frameColorVal)}" style="width:50px;">
       <label class="pn-ed-chk">
         <input type="checkbox" id="pn-button-mode" ${buttonOn ? 'checked' : ''}> ${this._t('buttonMode')}
       </label>
@@ -1578,6 +1648,9 @@ class PowerNexusEditor extends HTMLElement {
     const abstandDisp = this.shadowRoot.getElementById('pn-abstand-val');
     const linienSlider = this.shadowRoot.getElementById('pn-linien-staerke');
     const linienDisp = this.shadowRoot.getElementById('pn-linien-val');
+    const frameOpacitySlider = this.shadowRoot.getElementById('pn-frame-opacity');
+    const frameOpacityDisp = this.shadowRoot.getElementById('pn-frame-opacity-val');
+    const frameColorPicker = this.shadowRoot.getElementById('pn-frame-color');
     const buttonCb = this.shadowRoot.getElementById('pn-button-mode');
     const speedCb = this.shadowRoot.getElementById('pn-flow-speed-by-value');
     const socDisplaySel = this.shadowRoot.getElementById('pn-soc-display');
@@ -1587,10 +1660,13 @@ class PowerNexusEditor extends HTMLElement {
     zoomSlider.addEventListener('input', () => { zoomDisp.textContent = parseFloat(zoomSlider.value).toFixed(1); });
     abstandSlider.addEventListener('input', () => { abstandDisp.textContent = parseFloat(abstandSlider.value).toFixed(0); });
     linienSlider.addEventListener('input', () => { linienDisp.textContent = parseFloat(linienSlider.value).toFixed(0); });
+    frameOpacitySlider.addEventListener('input', () => { frameOpacityDisp.textContent = parseFloat(frameOpacitySlider.value).toFixed(0) + '%'; });
     const saveGeneral = () => {
       this._config.general.knoten_zoom = parseFloat(zoomSlider.value) || 1.0;
       this._config.general.knoten_abstand = parseFloat(abstandSlider.value) || 195;
       this._config.general.linien_staerke = parseFloat(linienSlider.value) || 10;
+      this._config.general.frame_opacity = parseFloat(frameOpacitySlider.value) || 22;
+      this._config.general.frame_color = frameColorPicker.value;
       this._config.general.button_mode = buttonCb.checked;
       this._config.general.flow_speed_by_value = speedCb.checked;
       this._config.general.soc_display = socDisplaySel.value;
@@ -1602,6 +1678,8 @@ class PowerNexusEditor extends HTMLElement {
     zoomSlider.addEventListener('change', saveGeneral);
     abstandSlider.addEventListener('change', saveGeneral);
     linienSlider.addEventListener('change', saveGeneral);
+    frameOpacitySlider.addEventListener('change', saveGeneral);
+    frameColorPicker.addEventListener('change', saveGeneral);
     buttonCb.addEventListener('change', saveGeneral);
     speedCb.addEventListener('change', saveGeneral);
     socDisplaySel.addEventListener('change', saveGeneral);
@@ -1672,21 +1750,25 @@ class PowerNexusEditor extends HTMLElement {
         <span class="pn-ed-slider-val" id="pn-home-power-size-val">${h.power_size ?? 100}%</span>
       </div>
     `;
-    // Icon-Picker
-    const homeIcon = document.createElement('ha-icon-picker');
-    homeIcon.value = h.icon || 'mdi:home';
-    homeIcon.style.width = '100%';
-    homeIcon.addEventListener('value-changed', (e) => { this._config.home.icon = e.detail.value; this._fireChange(); });
-    this.shadowRoot.getElementById('pn-home-icon-wrap').appendChild(homeIcon);
-    // Entity-Picker
-    const homeEntity = document.createElement('ha-entity-picker');
-    homeEntity.setAttribute('allow-custom-entity', '');
-    homeEntity.setAttribute('hideClearIcon', '');
+    // Icon-Picker (wiederverwenden – Safari-Fix)
+    this._ensurePicker('home-icon', 'pn-home-icon-wrap', () => {
+      const p = document.createElement('ha-icon-picker');
+      p.style.width = '100%';
+      p.addEventListener('value-changed', (e) => { this._config.home.icon = e.detail.value; this._fireChange(); });
+      return p;
+    }).value = h.icon || 'mdi:home';
+    // Entity-Picker (wiederverwenden – Safari-Fix)
+    this._ensurePicker('home-entity', 'pn-home-entity-wrap', () => {
+      const p = document.createElement('ha-entity-picker');
+      p.setAttribute('allow-custom-entity', '');
+      p.setAttribute('hideClearIcon', '');
+      p.style.width = '100%';
+      p.addEventListener('value-changed', (e) => { this._config.home.entity = e.detail.value; this._fireChange(); });
+      return p;
+    });
+    const homeEntity = this._pickerCache['home-entity'];
     homeEntity.value = h.entity || '';
     homeEntity.hass = this._hass;
-    homeEntity.style.width = '100%';
-    homeEntity.addEventListener('value-changed', (e) => { this._config.home.entity = e.detail.value; this._fireChange(); });
-    this.shadowRoot.getElementById('pn-home-entity-wrap').appendChild(homeEntity);
     const hn = this.shadowRoot.getElementById('pn-home-name');
     const hc = this.shadowRoot.getElementById('pn-home-color');
     hn.addEventListener('change', () => { this._config.home.name = hn.value; this._fireChange(); });
@@ -1720,8 +1802,13 @@ class PowerNexusEditor extends HTMLElement {
       wrap.innerHTML = `
         <label class="pn-ed-lbl">${this._t('name')}</label>
         <input class="pn-ed-inp" data-idx="${i}" data-field="name" value="${_htmlEscape(n.name || '')}">
+        <label class="pn-ed-chk" style="margin-top:6px;">
+          <input type="checkbox" class="pn-ed-cb" data-idx="${i}" data-field="show_name" ${n.show_name !== false ? 'checked' : ''}> ${this._t('showName')}
+        </label>
         <label class="pn-ed-lbl">${this._t('icon')}</label>
         <div id="pn-node-icon-wrap-${i}"></div>
+        <label class="pn-ed-lbl">${this._t('iconShiftY')}</label>
+        <input class="pn-ed-inp" type="number" data-idx="${i}" data-field="icon_shift_y" value="${n.icon_shift_y ?? 0}" step="1" style="width:80px;">
         <div class="pn-ed-row">
           <div style="flex:1;">
             <label class="pn-ed-lbl">${this._t('size')}</label>
@@ -1763,6 +1850,11 @@ class PowerNexusEditor extends HTMLElement {
         <div id="pn-node-soc-wrap-${i}"></div>
         <label class="pn-ed-lbl">${this._t('auxEntity')}</label>
         <div id="pn-node-aux-wrap-${i}"></div>
+        <label class="pn-ed-lbl">${this._t('auxAngle')}</label>
+        <div class="pn-ed-slider">
+          <input type="range" min="0" max="360" step="5" class="pn-ed-inp pn-ed-sld" data-idx="${i}" data-field="aux_angle" value="${n.aux_angle ?? 0}">
+          <span class="pn-ed-slider-val">${n.aux_angle ?? 0}°</span>
+        </div>
         <label class="pn-ed-chk">
           <input type="checkbox" class="pn-ed-cb" data-idx="${i}" data-field="invert_flow" ${n.invert_flow ? 'checked' : ''}> ${this._t('invertFlow')}
         </label>
@@ -1868,49 +1960,61 @@ class PowerNexusEditor extends HTMLElement {
           <button class="pn-ed-btn-conn-add" data-idx="${i}">${this._t('addConn')}</button>
         </div>
       `;
-      // Icon-Picker
-      const ni = document.createElement('ha-icon-picker');
-      ni.value = n.icon || '';
-      ni.style.width = '100%';
-      ni.addEventListener('value-changed', (e) => { this._config.nodes[i].icon = e.detail.value; this._fireChange(); });
-      this.shadowRoot.getElementById('pn-node-icon-wrap-' + i).appendChild(ni);
-      // Entity-Picker
-      const ne = document.createElement('ha-entity-picker');
-      ne.setAttribute('allow-custom-entity', '');
-      ne.setAttribute('hideClearIcon', '');
+      // Icon-Picker (wiederverwenden – Safari-Fix)
+      this._ensurePicker(`node-${i}-icon`, 'pn-node-icon-wrap-' + i, () => {
+        const p = document.createElement('ha-icon-picker');
+        p.style.width = '100%';
+        p.addEventListener('value-changed', (e) => { this._config.nodes[i].icon = e.detail.value; this._fireChange(); });
+        return p;
+      }).value = n.icon || '';
+      // Entity-Input-Picker (wiederverwenden – Safari-Fix)
+      this._ensurePicker(`node-${i}-entity`, 'pn-node-entity-wrap-' + i, () => {
+        const p = document.createElement('ha-entity-picker');
+        p.setAttribute('allow-custom-entity', '');
+        p.setAttribute('hideClearIcon', '');
+        p.style.width = '100%';
+        p.addEventListener('value-changed', (e) => { this._config.nodes[i].entity_input = e.detail.value; this._fireChange(); });
+        return p;
+      });
+      const ne = this._pickerCache[`node-${i}-entity`];
       ne.value = n.entity_input || '';
       ne.hass = this._hass;
-      ne.style.width = '100%';
-      ne.addEventListener('value-changed', (e) => { this._config.nodes[i].entity_input = e.detail.value; this._fireChange(); });
-      this.shadowRoot.getElementById('pn-node-entity-wrap-' + i).appendChild(ne);
-      // Entity-Output-Picker
-      const ne2 = document.createElement('ha-entity-picker');
-      ne2.setAttribute('allow-custom-entity', '');
-      ne2.setAttribute('hideClearIcon', '');
+      // Entity-Output-Picker (wiederverwenden – Safari-Fix)
+      this._ensurePicker(`node-${i}-entity2`, 'pn-node-entity2-wrap-' + i, () => {
+        const p = document.createElement('ha-entity-picker');
+        p.setAttribute('allow-custom-entity', '');
+        p.setAttribute('hideClearIcon', '');
+        p.style.width = '100%';
+        p.addEventListener('value-changed', (e) => { this._config.nodes[i].entity_output = e.detail.value; this._fireChange(); });
+        return p;
+      });
+      const ne2 = this._pickerCache[`node-${i}-entity2`];
       ne2.value = n.entity_output || '';
       ne2.hass = this._hass;
-      ne2.style.width = '100%';
-      ne2.addEventListener('value-changed', (e) => { this._config.nodes[i].entity_output = e.detail.value; this._fireChange(); });
-      this.shadowRoot.getElementById('pn-node-entity2-wrap-' + i).appendChild(ne2);
-      // SoC-Picker
-      const ns = document.createElement('ha-entity-picker');
-      ns.setAttribute('allow-custom-entity', '');
-      ns.setAttribute('hideClearIcon', '');
+      // SoC-Picker (wiederverwenden – Safari-Fix)
+      this._ensurePicker(`node-${i}-soc`, 'pn-node-soc-wrap-' + i, () => {
+        const p = document.createElement('ha-entity-picker');
+        p.setAttribute('allow-custom-entity', '');
+        p.setAttribute('hideClearIcon', '');
+        p.style.width = '100%';
+        p.addEventListener('value-changed', (e) => { this._config.nodes[i].soc_entity = e.detail.value; this._fireChange(); });
+        return p;
+      });
+      const ns = this._pickerCache[`node-${i}-soc`];
       ns.value = n.soc_entity || '';
       ns.hass = this._hass;
-      ns.style.width = '100%';
-      ns.addEventListener('value-changed', (e) => { this._config.nodes[i].soc_entity = e.detail.value; this._fireChange(); });
-      this.shadowRoot.getElementById('pn-node-soc-wrap-' + i).appendChild(ns);
-      // Aux-Entity-Picker
-      const na = document.createElement('ha-entity-picker');
-      na.setAttribute('allow-custom-entity', '');
-      na.setAttribute('hideClearIcon', '');
+      // Aux-Entity-Picker (wiederverwenden – Safari-Fix)
+      this._ensurePicker(`node-${i}-aux`, 'pn-node-aux-wrap-' + i, () => {
+        const p = document.createElement('ha-entity-picker');
+        p.setAttribute('allow-custom-entity', '');
+        p.setAttribute('hideClearIcon', '');
+        p.style.width = '100%';
+        p.addEventListener('value-changed', (e) => { this._config.nodes[i].aux_entity = e.detail.value; this._fireChange(); });
+        return p;
+      });
+      const na = this._pickerCache[`node-${i}-aux`];
       na.value = n.aux_entity || '';
       na.hass = this._hass;
-      na.style.width = '100%';
-      na.addEventListener('value-changed', (e) => { this._config.nodes[i].aux_entity = e.detail.value; this._fireChange(); });
-      const auxWrap = this.shadowRoot.getElementById('pn-node-aux-wrap-' + i);
-      if (auxWrap) auxWrap.appendChild(na);
       this._renderNodeConns(i);
     });
 
@@ -1927,7 +2031,8 @@ class PowerNexusEditor extends HTMLElement {
     this.shadowRoot.querySelectorAll('.pn-ed-sld[data-idx]').forEach(sld => {
       sld.addEventListener('input', () => {
         const disp = sld.parentElement.querySelector('.pn-ed-slider-val');
-        if (disp) disp.textContent = parseFloat(sld.value) + '%';
+        const suffix = sld.dataset.field === 'aux_angle' ? '°' : '%';
+        if (disp) disp.textContent = parseFloat(sld.value) + suffix;
       });
     });
 
