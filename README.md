@@ -42,6 +42,9 @@ Die Power Nexus Card ist eine Custom Card für Home Assistant zur Visualisierung
 - Wahl zwischen einer Gesamt-Entität oder zwei Einzel-Entitäten für Input und Output
 - zusätzlich anzeigebare Entität pro Knoten (bspw. für Tagesverbräuche)
 - Aktueller Sprachsupport im GUI-Editor: DE & EN
+- optionales Hintergrundbild mit einstellbarer Transparenz
+- Knotenpositionen in 0,5-Schritten
+- automatisches Ausblenden/Ausgrauen bei nicht verfuegbaren (N/A) oder fehlenden Entitaeten
 
 ### Installation
 
@@ -113,8 +116,8 @@ nodes:
 | `show_name` | boolean | `true` | – | ✓ | Name auf der Karte anzeigen |
 | `icon_shift_y` | number | `0` | – | ✓ | Vertikaler Icon-Shift (px) |
 | `slot` | number | `0` | – | ✓ | Slot-Position (0–3) |
-| `x_position` | number | `-1` | – | ✓ | X-Position im Grid |
-| `y_position` | number | `0` | – | ✓ | Y-Position im Grid |
+| `x_position` | number | `-1` | – | ✓ | X-Position im Grid (0,5-Schritte) |
+| `y_position` | number | `0` | – | ✓ | Y-Position im Grid (0,5-Schritte) |
 | `invert_flow` | boolean | `false` | – | ✓ | Flussrichtung umkehren |
 | `auto_hide` | boolean | `false` | – | ✓ | Automatisch ausblenden |
 | `hide_threshold` | number | `0` | – | ✓ | Schwellwert Ausblenden (Watt) |
@@ -139,6 +142,23 @@ nodes:
 | `connections` | array | `[]` | – | ✓ | Verbindungen (z.B. `[{ target: "home" }]`) |
 
 > **Hinweis zu Farben:** Alle Farbfelder (`color`, `bg_color`, `icon_color` etc.) unterstützen 8-stelligen Hex-Wert mit Alphakanal (z.B. `#ff000080` für halbtransparentes Rot) sowie HA-Theme-Variablen (z.B. `var(--accent-color)`).
+
+### Hintergrundbild & allgemeine Optionen
+
+| Eigenschaft | Typ | Default | Beschreibung |
+|---|---|---|---|
+| `background_image` | string | `""` | URL/Pfad zum Hintergrundbild (z.B. `/local/bilder/haus.jpg`) |
+| `background_image_opacity` | number | `100` | Deckkraft des Hintergrundbilds in % (0–100) |
+
+```yaml
+type: custom:power-nexus-card
+general:
+  background_image: /local/bilder/haus.jpg
+  background_image_opacity: 40
+nodes:
+  - name: PV
+    # ...
+```
 
 ---
 
@@ -174,6 +194,9 @@ The Power Nexus Card is a custom card for Home Assistant to visualize energy flo
 - choice between a total entity or two individual entities for input and output
 - additional displayable entity per node (e.g. for daily consumption)
 - current language support in the GUI editor: DE & EN
+- optional background image with adjustable transparency
+- node positions in 0.5 steps
+- automatic hide/fade when an entity is unavailable (N/A) or missing
 
 ### Installation
 
@@ -245,13 +268,14 @@ nodes:
 | `show_name` | boolean | `true` | – | ✓ | Show name on the card |
 | `icon_shift_y` | number | `0` | – | ✓ | Vertical icon shift (px) |
 | `slot` | number | `0` | – | ✓ | Slot position (0–3) |
-| `x_position` | number | `-1` | – | ✓ | X position in grid |
-| `y_position` | number | `0` | – | ✓ | Y position in grid |
+| `x_position` | number | `-1` | – | ✓ | X position in grid (0.5 steps) |
+| `y_position` | number | `0` | – | ✓ | Y position in grid (0.5 steps) |
 | `invert_flow` | boolean | `false` | – | ✓ | Invert flow direction |
 | `auto_hide` | boolean | `false` | – | ✓ | Auto-hide |
 | `hide_threshold` | number | `0` | – | ✓ | Hide threshold (Watts) |
 | `hide_mode` | string | `"hide"` | – | ✓ | Hide mode: `hide` or `fade` |
 | `fade_hide_edges` | boolean | `false` | – | ✓ | Also hide flow lines |
+| `na_mode` | string | `"off"` | – | ✓ | Behaviour when entity is N/A or missing: `off`, `hide` or `fade` |
 | `bg_color` | string | `"#000000"` | ✓ | ✓ | Background color (Hex) |
 | `bg_transparent` | boolean | `false` | ✓ | ✓ | Background transparent |
 | `icon_color` | string | `""` | ✓ | ✓ | Icon color (Hex) |
@@ -270,6 +294,23 @@ nodes:
 | `connections` | array | `[]` | – | ✓ | Connections (e.g. `[{ target: "home" }]`) |
 
 > **Color Note:** All color fields (`color`, `bg_color`, `icon_color` etc.) support 8-digit hex with alpha channel (e.g. `#ff000080` for semi-transparent red) as well as HA theme variables (e.g. `var(--accent-color)`).
+
+### Background Image & General Options
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `background_image` | string | `""` | URL/path to the background image (e.g. `/local/bilder/haus.jpg`) |
+| `background_image_opacity` | number | `100` | Background image opacity in % (0–100) |
+
+```yaml
+type: custom:power-nexus-card
+general:
+  background_image: /local/bilder/haus.jpg
+  background_image_opacity: 40
+nodes:
+  - name: PV
+    # ...
+```
 
 ---
 
@@ -305,6 +346,9 @@ Power Nexus Card 是一款用于 Home Assistant 的自定义卡片，用于可�
 - 可选择使用一个总实体或两个单独的输入/输出实体
 - 每个节点可额外显示一个实体（例如日消耗量）
 - GUI 编辑器中的当前语言支持：德语和英语
+- 可选背景图片，可调节透明度
+- 节点位置支持 0.5 步长
+- 实体不可用 (N/A) 或不存在时自动隐藏/淡化
 
 ### 安装
 
@@ -376,13 +420,14 @@ nodes:
 | `show_name` | boolean | `true` | – | ✓ | 在卡片上显示名称 |
 | `icon_shift_y` | number | `0` | – | ✓ | 垂直图标偏移 (px) |
 | `slot` | number | `0` | – | ✓ | 槽位 (0–3) |
-| `x_position` | number | `-1` | – | ✓ | 网格中 X 位置 |
-| `y_position` | number | `0` | – | ✓ | 网格中 Y 位置 |
+| `x_position` | number | `-1` | – | ✓ | 网格中 X 位置（0.5 步长） |
+| `y_position` | number | `0` | – | ✓ | 网格中 Y 位置（0.5 步长） |
 | `invert_flow` | boolean | `false` | – | ✓ | 反转流向 |
 | `auto_hide` | boolean | `false` | – | ✓ | 自动隐藏 |
 | `hide_threshold` | number | `0` | – | ✓ | 隐藏阈值 (瓦特) |
 | `hide_mode` | string | `"hide"` | – | ✓ | 隐藏模式: `hide` 或 `fade` |
 | `fade_hide_edges` | boolean | `false` | – | ✓ | 同时隐藏流线 |
+| `na_mode` | string | `"off"` | – | ✓ | 实体为 N/A 或不存在时的行为：`off`、`hide` 或 `fade` |
 | `bg_color` | string | `"#000000"` | ✓ | ✓ | 背景颜色 (Hex) |
 | `bg_transparent` | boolean | `false` | ✓ | ✓ | 背景透明 |
 | `icon_color` | string | `""` | ✓ | ✓ | 图标颜色 (Hex) |
@@ -401,6 +446,23 @@ nodes:
 | `connections` | array | `[]` | – | ✓ | 连接 (例如 `[{ target: "home" }]`) |
 
 > **颜色提示：** 所有颜色字段（`color`、`bg_color`、`icon_color` 等）支持 8 位十六进制含透明通道（例如 `#ff000080` 表示半透明红色）以及 HA 主题变量（例如 `var(--accent-color)`）。
+
+### 背景图片与常规选项
+
+| 属性 | 类型 | 默认值 | 描述 |
+|---|---|---|---|
+| `background_image` | string | `""` | 背景图片 URL/路径（例如 `/local/bilder/haus.jpg`） |
+| `background_image_opacity` | number | `100` | 背景图片不透明度，百分比 (0–100) |
+
+```yaml
+type: custom:power-nexus-card
+general:
+  background_image: /local/bilder/haus.jpg
+  background_image_opacity: 40
+nodes:
+  - name: PV
+    # ...
+```
 
 
 ## Screenshots
