@@ -499,7 +499,8 @@ nodes:
 
 ## Lizenz / License
 
-[CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+[MIT](https://opensource.org/licenses/MIT) © 2026 MankiesWorkshop
 
-©  – Namensnennung, nicht kommerziell, Weitergabe unter gleichen Bedingungen.
-Kommerzielle Nutzung ist ohne ausdrückliche Genehmigung des Autors **nicht** gestattet.
+Die Software wird „wie besehen" bereitgestellt, ohne Gewährleistung jeglicher Art. Nutzung, Veränderung und Weitergabe sind gestattet, sofern der Copyright-Hinweis beibehalten wird.
+
+The software is provided "as is", without warranty of any kind. Use, modification and distribution are permitted provided the copyright notice is retained.
