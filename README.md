@@ -120,6 +120,7 @@ nodes:
 | `hide_threshold` | number | `0` | – | ✓ | Schwellwert Ausblenden (Watt) |
 | `hide_mode` | string | `"hide"` | – | ✓ | Ausblendmodus: `hide` oder `fade` |
 | `fade_hide_edges` | boolean | `false` | – | ✓ | Auch Flusslinien ausblenden |
+| `na_mode` | string | `"off"` | – | ✓ | Verhalten bei N/A oder nicht vorhandener Entität: `off`, `hide` oder `fade` |
 | `bg_color` | string | `"#000000"` | ✓ | ✓ | Hintergrundfarbe (Hex) |
 | `bg_transparent` | boolean | `false` | ✓ | ✓ | Hintergrund transparent |
 | `icon_color` | string | `""` | ✓ | ✓ | Icon-Farbe (Hex) |

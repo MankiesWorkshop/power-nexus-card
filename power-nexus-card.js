@@ -1,8 +1,8 @@
 // ─── Power Nexus Card ─────────────────────────────────────────────────────────
 // Home Assistant Lovelace Custom Card zur Visualisierung von Energieflüssen
-// Version 0.4.0
+// Version 0.4.4
 
-const CARD_VERSION = "0.4.0";
+const CARD_VERSION = "0.4.4";
 console.debug(`PowerNexusCard v${CARD_VERSION} geladen`, new Date().toLocaleTimeString());
 
 // ─── Geometrie-Konstanten ─────────────────────────────────────────────────────
@@ -29,6 +29,10 @@ const GEOM = {
 
 // HTML-Escaping um Injection zu verhindern
 const _htmlEscape = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+// Positions-Raster: erlaubt 0,5-Schritte – intern ganzzahliges Halbe-Zellen-Gitter (g = Position × 2)
+// SVG-Position = HOME + (g / 2) × CELL  →  Routing/Gruppierung bleiben auf ganzzahligen Gitterkoordinaten
+const _grid = v => Math.round((parseFloat(v) || 0) * 2);
 
 // Power Nexus Card – Energiefluss-Visualisierung für Home Assistant
 window.customCards = window.customCards || [];
@@ -61,7 +65,7 @@ class PowerNexus extends HTMLElement {
         // Migration: x/y → x_position/y_position
         if (n.x_position === undefined && n.x !== undefined) { n.x_position = n.x; delete n.x; }
         if (n.y_position === undefined && n.y !== undefined) { n.y_position = n.y; delete n.y; }
-        const node = { size: "M", slot: 0, invert_flow: false, subtract_output: false, hide_mode: "hide", fade_hide_edges: false, nexus_relevant: false, show_name: true, icon_shift_y: 0, aux_angle: 0, aux_entity: "", aux_bg_color: "#000000", aux_bg_transparent: false, bg_color: "#000000", bg_transparent: false, icon_color: "", power_color: "", aux_color: "", soc_color: "", name_color: "", name_size: 100, icon_size: 100, power_size: 100, aux_size: 100, soc_size: 100, soc_stroke_width: 5, ...n };
+        const node = { size: "M", slot: 0, invert_flow: false, subtract_output: false, hide_mode: "hide", na_mode: "off", fade_hide_edges: false, nexus_relevant: false, show_name: true, icon_shift_y: 0, aux_angle: 0, aux_entity: "", aux_bg_color: "#000000", aux_bg_transparent: false, bg_color: "#000000", bg_transparent: false, icon_color: "", power_color: "", aux_color: "", soc_color: "", name_color: "", name_size: 100, icon_size: 100, power_size: 100, aux_size: 100, soc_size: 100, soc_stroke_width: 5, ...n };
         node.slot = Math.max(0, Math.min(3, node.slot ?? 0));
         node.hide_threshold = Math.max(0, node.hide_threshold ?? 0);
         return node;
@@ -119,16 +123,23 @@ class PowerNexus extends HTMLElement {
     return (v1 || 0) + (subtract ? -1 : 1) * (v2 || 0);
   }
 
+  // Prüft, ob ein Leistungswert den auto_hide-Schwellwert unterschreitet
+  // threshold > 0: ausblenden bei |p| < threshold (Knoten praktisch inaktiv)
+  // threshold = 0: ausblenden bei p < 0 (jeder negative Wert liegt unter 0)
+  _belowThreshold(p, threshold) {
+    if (threshold > 0) return Math.abs(p) < threshold;
+    return threshold === 0 && p < 0;
+  }
+
   // Prüft ob ein Knoten unter seinen auto_hide-Schwellwert gefallen ist
   _isNodeBelowThreshold(n) {
     if (!n.auto_hide) return false;
     if (this._isEntityNA(n.entity_input) || this._isEntityNA(n.entity_output)) return false;
     if ((n.entity_input && !this._hass?.states[n.entity_input]) || (n.entity_output && !this._hass?.states[n.entity_output])) return false;
     const threshold = parseFloat(n.hide_threshold) || 0;
-    if (threshold <= 0) return false;
     const v1 = (n.entity_input && this._hass?.states[n.entity_input]) ? parseFloat(this._hass.states[n.entity_input].state) || 0 : 0;
     const v2 = (n.entity_output && this._hass?.states[n.entity_output]) ? parseFloat(this._hass.states[n.entity_output].state) || 0 : 0;
-    return Math.abs(this._calcNetPower(v1, v2, n.subtract_output)) < threshold;
+    return this._belowThreshold(this._calcNetPower(v1, v2, n.subtract_output), threshold);
   }
 
   static getStubConfig() {
@@ -145,7 +156,9 @@ class PowerNexus extends HTMLElement {
         linien_staerke: 10,
         knoten_name_farbe: "#ffffff",
         frame_opacity: 22,
-        frame_color: ""
+        frame_color: "",
+        background_image: "",
+        background_image_opacity: 100
       },
       home: {
         name: "Nexus",
@@ -188,6 +201,8 @@ class PowerNexus extends HTMLElement {
             { name: "linien_staerke", selector: { number: { min: 2, max: 30, step: 1 } } },
             { name: "frame_opacity", selector: { number: { min: 0, max: 100, step: 1 } } },
             { name: "frame_color", selector: { text: { type: "color" } } },
+            { name: "background_image", selector: { text: {} } },
+            { name: "background_image_opacity", selector: { number: { min: 0, max: 100, step: 1 } } },
             { name: "knoten_name_farbe", selector: { text: { type: "color" } } }
           ]
         },
@@ -249,11 +264,15 @@ class PowerNexus extends HTMLElement {
       if (!cache) return;
       const el = cache.powerEl;
       const ng = cache.nodeEl;
+      cache._naState = false;
       if (el) {
         const na1 = this._isEntityNA(n.entity_input);
         const na2 = this._isEntityNA(n.entity_output);
         const anyNA = na1 || na2;
         const anySet = (n.entity_input && this._hass?.states[n.entity_input]) || (n.entity_output && this._hass?.states[n.entity_output]);
+        const anyCfg = !!(n.entity_input || n.entity_output);
+        // NA-Zustand: Entität nicht verfügbar/unbekannt ODER konfiguriert, aber nicht vorhanden (?)
+        cache._naState = anyNA || (!anySet && anyCfg);
         const v1 = (n.entity_input && this._hass?.states[n.entity_input] && !na1) ? parseFloat(this._hass.states[n.entity_input].state) || 0 : null;
         const v2 = (n.entity_output && this._hass?.states[n.entity_output] && !na2) ? parseFloat(this._hass.states[n.entity_output].state) || 0 : null;
         // Rohwert für Nexus-Summe cachen (vor Formatierung)
@@ -271,11 +290,17 @@ class PowerNexus extends HTMLElement {
         if (ng) {
           const rawPower = cache._rawPower;
           const threshold = parseFloat(n.hide_threshold) || 0;
+          const naMode = cache._naState ? (n.na_mode || 'off') : 'off';
           ng.classList.remove('pn-hidden', 'pn-faded');
-          if (!anyNA && n.auto_hide && threshold > 0 && Math.abs(rawPower) < threshold) {
-            const mode = n.hide_mode || 'hide';
-            const targetCls = mode === 'fade' ? 'pn-faded' : 'pn-hidden';
-            const otherCls = mode === 'fade' ? 'pn-hidden' : 'pn-faded';
+          let hideMode = null;
+          if (naMode !== 'off') {
+            hideMode = naMode; // NA-Verhalten hat Vorrang
+          } else if (!anyNA && n.auto_hide && this._belowThreshold(rawPower ?? 0, threshold)) {
+            hideMode = n.hide_mode || 'hide';
+          }
+          if (hideMode) {
+            const targetCls = hideMode === 'fade' ? 'pn-faded' : 'pn-hidden';
+            const otherCls = hideMode === 'fade' ? 'pn-hidden' : 'pn-faded';
             if (ng.classList.contains(otherCls)) ng.classList.remove(otherCls);
             if (!ng.classList.contains(targetCls)) ng.classList.add(targetCls);
           }
@@ -396,11 +421,16 @@ class PowerNexus extends HTMLElement {
     const cellEdgesFaded = new Map();
     const cellGroups = this._cellGroups || {};
     const cellKeys = this._cellGroupKeys || Object.keys(cellGroups);
-    // _pn_below direkt aus rawPower der Hauptschleife ableiten (spart _isNodeBelowThreshold)
+    // Hidden-Status je Node ableiten (Auto-Hide-Schwellwert ODER NA-Verhalten)
     allNodes.forEach((n, i) => {
-      const rawPower = this._nodeCache?.[i]?._rawPower;
+      const cache = this._nodeCache?.[i];
+      const rawPower = cache?._rawPower;
       const threshold = parseFloat(n.hide_threshold) || 0;
-      n._pn_below = n.auto_hide && threshold > 0 && rawPower !== null && rawPower !== undefined && Math.abs(rawPower) < threshold;
+      const autoBelow = n.auto_hide && rawPower !== null && rawPower !== undefined && this._belowThreshold(rawPower, threshold);
+      const naMode = cache?._naState ? (n.na_mode || 'off') : 'off';
+      n._pn_below = autoBelow || naMode !== 'off';
+      n._pn_mode = naMode !== 'off' ? naMode : (n.hide_mode || 'hide');
+      n._pn_auto = n.auto_hide || naMode !== 'off';
     });
     // Zell-Summen berechnen
     cellKeys.forEach(ck => {
@@ -419,11 +449,11 @@ class PowerNexus extends HTMLElement {
       let allBelow = true, allHide = true, allFadeHideEdges = true;
       for (const n of cNodes) {
         if (!n._pn_below) { allBelow = false; break; }
-        const mode = n.hide_mode || 'hide';
+        const mode = n._pn_mode || 'hide';
         if (mode !== 'hide') allHide = false;
         if (n.fade_hide_edges !== true) allFadeHideEdges = false;
       }
-      cellAllHidden.set(ck, cNodes.length > 0 && cNodes.every(n => (n.hide_mode || 'hide') !== 'fade' && n._pn_below));
+      cellAllHidden.set(ck, cNodes.length > 0 && cNodes.every(n => (n._pn_mode || 'hide') !== 'fade' && n._pn_below));
       cellEdgesHidden.set(ck, allBelow && (!allHide || (allHide && allFadeHideEdges)));
       cellEdgesFaded.set(ck, allBelow && !allHide && !allFadeHideEdges);
     });
@@ -486,16 +516,16 @@ class PowerNexus extends HTMLElement {
       if (!cellKey) return;
       const cNodes = cellGroups[cellKey];
       if (!cNodes || cNodes.length === 0) return;
-      const allAutoHide = cNodes.every(n => n.auto_hide);
-      const anyVisible = cNodes.some(n => !n.auto_hide || (n.hide_mode || 'hide') === 'fade' || !n._pn_below);
+      const allAutoHide = cNodes.every(n => n._pn_auto);
+      const anyVisible = cNodes.some(n => !n._pn_auto || (n._pn_mode || 'hide') === 'fade' || !n._pn_below);
       if (allAutoHide && !anyVisible) {
         if (!frame.classList.contains('pn-hidden')) frame.classList.add('pn-hidden');
       } else {
         frame.classList.remove('pn-hidden');
       }
     });
-    // Threshold-Cache aufräumen
-    allNodes.forEach(n => { n._pn_below = undefined; });
+    // Threshold-/NA-Cache aufräumen
+    allNodes.forEach(n => { n._pn_below = undefined; n._pn_mode = undefined; n._pn_auto = undefined; });
   }
 
   // Strahl-Rechteck-Intersection
@@ -536,7 +566,7 @@ class PowerNexus extends HTMLElement {
     const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
     const maxDist = Math.abs(tx - sx) + Math.abs(ty - sy) + 6;
     let iters = 0;
-    const MAX_ITERS = 15000;
+    const MAX_ITERS = 40000;
     while (queue.length > 0) {
       if (++iters > MAX_ITERS) break;
       const {x, y, path} = queue.shift();
@@ -611,6 +641,13 @@ class PowerNexus extends HTMLElement {
     const h = c.home || {};
     const g = c.general || {};
     const nodes = c.nodes || [];
+    // Hintergrundbild + Deckkraft (0–100 %) der Karte
+    const bgImage = g.background_image ? String(g.background_image) : '';
+    const bgOpacityPct = (g.background_image_opacity !== undefined && g.background_image_opacity !== null && !isNaN(parseFloat(g.background_image_opacity)))
+      ? Math.max(0, Math.min(100, parseFloat(g.background_image_opacity))) : 100;
+    const bgLayer = bgImage
+      ? `<div class="pn-bg" style="${_htmlEscape('background-image:url("' + bgImage + '");opacity:' + (bgOpacityPct / 100).toFixed(2))}"></div>`
+      : '';
     const homeName = h.name || "Haus";
     const homeIcon = h.icon || "mdi:home";
     const homeColor = this._toHex(h.color);
@@ -681,7 +718,7 @@ class PowerNexus extends HTMLElement {
     const occupied = new Set(['0,0']); // Home ist immer besetzt
     const cellNodes = {};
     nodes.forEach((n, i) => {
-      const k = `${n.x_position??0},${n.y_position??0}`;
+      const k = `${_grid(n.x_position)},${_grid(n.y_position)}`;
       cellCount[k] = (cellCount[k] || 0) + 1;
       occupied.add(k);
       if (!cellNodes[k]) cellNodes[k] = [];
@@ -709,8 +746,8 @@ class PowerNexus extends HTMLElement {
       .filter(([, cnt]) => cnt > 1)
       .map(([key]) => {
         const [gx, gy] = key.split(',').map(Number);
-        const gcx = HOME_CX + gx * CELL;
-        const gcy = HOME_CY + gy * CELL;
+        const gcx = HOME_CX + gx * (CELL / 2);
+        const gcy = HOME_CY + gy * (CELL / 2);
         const fh = CELL * GEOM.FRAME_HALF;
         return `<rect class="pn-cell-frame" data-cell="${key}" x="${gcx - fh}" y="${gcy - fh}" width="${fh*2}" height="${fh*2}" rx="10" fill="none"/>`;
       }).join('');
@@ -727,8 +764,8 @@ class PowerNexus extends HTMLElement {
     const addedEdges = new Set();
     Object.entries(cellNodes).forEach(([cellKey, cNodes]) => {
       const [cx, cy] = cellKey.split(',').map(Number);
-      const cellCX = HOME_CX + cx * CELL;
-      const cellCY = HOME_CY + cy * CELL;
+      const cellCX = HOME_CX + cx * (CELL / 2);
+      const cellCY = HOME_CY + cy * (CELL / 2);
       const targets = new Map();
       cNodes.forEach(n => {
         (n.connections || []).forEach(conn => {
@@ -766,7 +803,7 @@ class PowerNexus extends HTMLElement {
         if (target !== 'home') {
           const tj = parseInt(target);
           if (!isNaN(tj) && tj < nodes.length) {
-            const tKey = `${nodes[tj].x_position??0},${nodes[tj].y_position??0}`;
+            const tKey = `${_grid(nodes[tj].x_position)},${_grid(nodes[tj].y_position)}`;
             tgtMulti = (cellNodes[tKey]?.length || 0) > 1;
           }
         }
@@ -782,8 +819,8 @@ class PowerNexus extends HTMLElement {
         if (target !== 'home') {
           const tj = parseInt(target);
           if (!isNaN(tj) && tj < nodes.length) {
-            tgtGX = nodes[tj].x_position || 0;
-            tgtGY = nodes[tj].y_position || 0;
+            tgtGX = _grid(nodes[tj].x_position);
+            tgtGY = _grid(nodes[tj].y_position);
           }
         }
 
@@ -810,8 +847,8 @@ class PowerNexus extends HTMLElement {
 
             // Grid→SVG umrechnen
             const waypoints = simplePath.map(p => ({
-              x: HOME_CX + p.x * CELL,
-              y: HOME_CY + p.y * CELL
+              x: HOME_CX + p.x * (CELL / 2),
+              y: HOME_CY + p.y * (CELL / 2)
             }));
 
             // Ersten Punkt an Source-Rand anpassen (Richtung → erster Waypoint)
@@ -880,8 +917,9 @@ class PowerNexus extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       <style>
-        :host { display: block; height: 100%; min-height: 100px; /* verhindert Layout-Shift beim Laden */ box-sizing: border-box; font-family: Roboto, sans-serif; background: var(--ha-card-background, var(--card-background-color)); border-radius: var(--ha-card-border-radius, 12px); border: 1px solid var(--ha-card-border-color, var(--divider-color, rgba(128,128,128,0.3))); box-shadow: var(--ha-card-box-shadow, none); }
-        .pn-container { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+        :host { display: block; position: relative; height: 100%; min-height: 100px; /* verhindert Layout-Shift beim Laden */ box-sizing: border-box; font-family: Roboto, sans-serif; background: var(--ha-card-background, var(--card-background-color)); border-radius: var(--ha-card-border-radius, 12px); border: 1px solid var(--ha-card-border-color, var(--divider-color, rgba(128,128,128,0.3))); box-shadow: var(--ha-card-box-shadow, none); }
+        .pn-bg { position: absolute; top: 0; left: 0; right: 0; bottom: 0; border-radius: inherit; background-size: cover; background-position: center; background-repeat: no-repeat; pointer-events: none; z-index: 0; }
+        .pn-container { position: relative; z-index: 1; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
         .pn-card-inner { position: relative; width: 88px; height: 88px; transform: scale(${scale}); transform-origin: center; }
         .pn-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: visible; }
         .pn-icon-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
@@ -910,6 +948,7 @@ class PowerNexus extends HTMLElement {
         @keyframes pn-flow-fwd { to { stroke-dashoffset: -${dashTotal}; } }
         @keyframes pn-flow-rev { to { stroke-dashoffset: ${dashTotal}; } }
       </style>
+      ${bgLayer}
       <div class="pn-container">
         ${g.show_version === true ? `<div class="pn-version-badge">v${CARD_VERSION}</div>` : ''}
         <div class="pn-card-inner">
@@ -979,7 +1018,7 @@ class PowerNexus extends HTMLElement {
     if (!this._cellGroups) {
       this._cellGroups = {};
       nodes.forEach(n => {
-        const ck = `${n.x_position??0},${n.y_position??0}`;
+        const ck = `${_grid(n.x_position)},${_grid(n.y_position)}`;
         if (!this._cellGroups[ck]) this._cellGroups[ck] = [];
         this._cellGroups[ck].push(n);
       });
@@ -1041,7 +1080,7 @@ class PowerNexus extends HTMLElement {
   _buildNodeSvg(n, i) {
     const ctx = this._ctx;
     const sx = n.x_position || 0, sy = n.y_position || 0;
-    const cellKey = `${sx},${sy}`;
+    const cellKey = `${_grid(sx)},${_grid(sy)}`;
     const hasNeighbors = (ctx.cellCount[cellKey] || 0) > 1;
     const slot = n.slot ?? 0;
     const d = GEOM.SLOT_DIST;
@@ -1162,6 +1201,8 @@ const EDITOR_LANG = {
     iconShiftY: 'Vertikaler Icon-Shift (px)',
     frameOpacity: 'Subknoten Rahmen-Transparenz',
     frameColor: 'Subknoten Rahmen-Farbe',
+    backgroundImage: 'Hintergrundbild (URL)',
+    backgroundImageOpacity: 'Transparenz Hintergrundbild',
     nodeNameColor: 'Farbe für Knotenname',
     name: 'Name', icon: 'Icon', color: 'Rahmen', homeEntity: 'Entität',
     homeSourceEntity: 'Quelle: Entität', homeSourceNexus: 'Quelle: Summe der Nexus-Knoten',
@@ -1186,6 +1227,8 @@ const EDITOR_LANG = {
     nexusRelevant: 'Für Nexus-Leistung relevant',
     hideMode: 'Ausblendemodus', hideModeHide: 'Ausblenden', hideModeFade: 'Ausgrauen',
     fadeHideEdges: 'Auch Flusslinien ausblenden',
+    naMode: 'Verhalten bei N/A', naModeOff: 'Nicht ausblenden (N/A anzeigen)', naModeHide: 'Ausblenden', naModeFade: 'Ausgrauen',
+    naModeHint: 'Gilt, wenn die Entität nicht verfügbar (N/A) oder nicht vorhanden ist (?)',
     sizeS: 'S – Klein', sizeM: 'M – Mittel', sizeL: 'L – Groß',
     entitySumHint: 'Standard: Anzeige = Input + Output (abziehbar via Checkbox)',
     dupWarning: 'Doppelte Position',
@@ -1206,6 +1249,8 @@ const EDITOR_LANG = {
     iconShiftY: 'Vertical Icon Shift (px)',
     frameOpacity: 'Sub-node Frame Opacity',
     frameColor: 'Sub-node Frame Color',
+    backgroundImage: 'Background image (URL)',
+    backgroundImageOpacity: 'Background image transparency',
     nodeNameColor: 'Color for Node Name',
     name: 'Name', icon: 'Icon', color: 'Frame', homeEntity: 'Entity',
     homeSourceEntity: 'Source: Entity', homeSourceNexus: 'Source: Sum of nexus nodes',
@@ -1230,6 +1275,8 @@ const EDITOR_LANG = {
     nexusRelevant: 'Relevant for Nexus power',
     hideMode: 'Hide mode', hideModeHide: 'Hide', hideModeFade: 'Fade',
     fadeHideEdges: 'Also hide flow lines',
+    naMode: 'Behaviour on N/A', naModeOff: 'Keep visible (show N/A)', naModeHide: 'Hide', naModeFade: 'Fade',
+    naModeHint: 'Applies when the entity is unavailable (N/A) or missing (?)',
     sizeS: 'S – Small', sizeM: 'M – Medium', sizeL: 'L – Large',
     entitySumHint: 'Default: Display = Input + Output (can be subtracted via checkbox)',
     dupWarning: 'Duplicate position',
@@ -1346,14 +1393,14 @@ class PowerNexusEditor extends HTMLElement {
   }
 
   _addNode() {
-    const occupied = new Set(this._config.nodes.map(n => `${n.x_position ?? 0},${n.y_position ?? 0}`));
+    const occupied = new Set(this._config.nodes.map(n => `${_grid(n.x_position)},${_grid(n.y_position)}`));
     let x = 0, y = 0;
     for (let d = 1; d <= 20; d++) {
       const candidates = [
         [-d, 0], [d, 0], [0, -d], [0, d],
         [-d, -d], [d, -d], [-d, d], [d, d]
       ];
-      const free = candidates.find(([cx, cy]) => !occupied.has(`${cx},${cy}`));
+      const free = candidates.find(([cx, cy]) => !occupied.has(`${_grid(cx)},${_grid(cy)}`));
       if (free) { x = free[0]; y = free[1]; break; }
     }
     this._config.nodes.push({
@@ -1366,6 +1413,7 @@ class PowerNexusEditor extends HTMLElement {
       subtract_output: false,
       auto_hide: false,
       hide_mode: "hide",
+      na_mode: "off",
       fade_hide_edges: false,
       nexus_relevant: false,
       show_name: true,
@@ -1591,6 +1639,9 @@ class PowerNexusEditor extends HTMLElement {
     const linienVal = parseFloat(c.general?.linien_staerke) || 10;
     const frameOpacityVal = parseFloat(c.general?.frame_opacity) || 22;
     const frameColorVal = c.general?.frame_color || '';
+    const bgImageVal = c.general?.background_image || '';
+    const bgOpacityVal = (c.general?.background_image_opacity !== undefined && c.general?.background_image_opacity !== null && !isNaN(parseFloat(c.general.background_image_opacity)))
+      ? parseFloat(c.general.background_image_opacity) : 100;
     const buttonOn = c.general?.button_mode === true;
     const speedByVal = c.general?.flow_speed_by_value !== false; // Default: true
     const socDisplay = c.general?.soc_display || 'text';
@@ -1619,6 +1670,13 @@ class PowerNexusEditor extends HTMLElement {
       </div>
       <label class="pn-ed-lbl">${this._t('frameColor')}</label>
       <input class="pn-ed-inp" type="color" id="pn-frame-color" value="${_htmlEscape(frameColorVal)}" style="width:50px;">
+      <label class="pn-ed-lbl">${this._t('backgroundImage')}</label>
+      <input class="pn-ed-inp" type="text" id="pn-bg-image" placeholder="/local/bild.jpg" value="${_htmlEscape(bgImageVal)}">
+      <label class="pn-ed-lbl">${this._t('backgroundImageOpacity')}</label>
+      <div class="pn-ed-slider">
+        <input type="range" min="0" max="100" step="1" id="pn-bg-opacity" value="${bgOpacityVal}">
+        <span class="pn-ed-slider-val" id="pn-bg-opacity-val">${bgOpacityVal}%</span>
+      </div>
       <label class="pn-ed-chk">
         <input type="checkbox" id="pn-button-mode" ${buttonOn ? 'checked' : ''}> ${this._t('buttonMode')}
       </label>
@@ -1651,6 +1709,9 @@ class PowerNexusEditor extends HTMLElement {
     const frameOpacitySlider = this.shadowRoot.getElementById('pn-frame-opacity');
     const frameOpacityDisp = this.shadowRoot.getElementById('pn-frame-opacity-val');
     const frameColorPicker = this.shadowRoot.getElementById('pn-frame-color');
+    const bgImageInput = this.shadowRoot.getElementById('pn-bg-image');
+    const bgOpacitySlider = this.shadowRoot.getElementById('pn-bg-opacity');
+    const bgOpacityDisp = this.shadowRoot.getElementById('pn-bg-opacity-val');
     const buttonCb = this.shadowRoot.getElementById('pn-button-mode');
     const speedCb = this.shadowRoot.getElementById('pn-flow-speed-by-value');
     const socDisplaySel = this.shadowRoot.getElementById('pn-soc-display');
@@ -1661,12 +1722,15 @@ class PowerNexusEditor extends HTMLElement {
     abstandSlider.addEventListener('input', () => { abstandDisp.textContent = parseFloat(abstandSlider.value).toFixed(0); });
     linienSlider.addEventListener('input', () => { linienDisp.textContent = parseFloat(linienSlider.value).toFixed(0); });
     frameOpacitySlider.addEventListener('input', () => { frameOpacityDisp.textContent = parseFloat(frameOpacitySlider.value).toFixed(0) + '%'; });
+    bgOpacitySlider.addEventListener('input', () => { bgOpacityDisp.textContent = parseFloat(bgOpacitySlider.value).toFixed(0) + '%'; });
     const saveGeneral = () => {
       this._config.general.knoten_zoom = parseFloat(zoomSlider.value) || 1.0;
       this._config.general.knoten_abstand = parseFloat(abstandSlider.value) || 195;
       this._config.general.linien_staerke = parseFloat(linienSlider.value) || 10;
       this._config.general.frame_opacity = parseFloat(frameOpacitySlider.value) || 22;
       this._config.general.frame_color = frameColorPicker.value;
+      this._config.general.background_image = bgImageInput.value.trim();
+      this._config.general.background_image_opacity = parseFloat(bgOpacitySlider.value);
       this._config.general.button_mode = buttonCb.checked;
       this._config.general.flow_speed_by_value = speedCb.checked;
       this._config.general.soc_display = socDisplaySel.value;
@@ -1680,6 +1744,8 @@ class PowerNexusEditor extends HTMLElement {
     linienSlider.addEventListener('change', saveGeneral);
     frameOpacitySlider.addEventListener('change', saveGeneral);
     frameColorPicker.addEventListener('change', saveGeneral);
+    bgImageInput.addEventListener('change', saveGeneral);
+    bgOpacitySlider.addEventListener('change', saveGeneral);
     buttonCb.addEventListener('change', saveGeneral);
     speedCb.addEventListener('change', saveGeneral);
     socDisplaySel.addEventListener('change', saveGeneral);
@@ -1826,11 +1892,11 @@ class PowerNexusEditor extends HTMLElement {
         <div class="pn-ed-row">
           <div>
             <label class="pn-ed-lbl">${this._t('xPos')}</label>
-            <input class="pn-ed-inp ${dupIndices.has(i) ? 'pn-ed-dup-inp' : ''}" type="number" data-idx="${i}" data-field="x_position" value="${n.x_position ?? -1}" style="width:80px;">
+            <input class="pn-ed-inp ${dupIndices.has(i) ? 'pn-ed-dup-inp' : ''}" type="number" step="0.5" data-idx="${i}" data-field="x_position" value="${n.x_position ?? -1}" style="width:80px;">
           </div>
           <div>
             <label class="pn-ed-lbl">${this._t('yPos')}</label>
-            <input class="pn-ed-inp ${dupIndices.has(i) ? 'pn-ed-dup-inp' : ''}" type="number" data-idx="${i}" data-field="y_position" value="${n.y_position ?? 0}" style="width:80px;">
+            <input class="pn-ed-inp ${dupIndices.has(i) ? 'pn-ed-dup-inp' : ''}" type="number" step="0.5" data-idx="${i}" data-field="y_position" value="${n.y_position ?? 0}" style="width:80px;">
           </div>
         </div>
         ${dupIndices.has(i) ? `<div class="pn-ed-dup-hint">⚠ ${this._t('dupWarning')} – ${this._t('dupWarningHint')}</div>` : ''}
@@ -1876,6 +1942,13 @@ class PowerNexusEditor extends HTMLElement {
             <input type="checkbox" class="pn-ed-cb" data-idx="${i}" data-field="fade_hide_edges" ${n.fade_hide_edges ? 'checked' : ''}> ${this._t('fadeHideEdges')}
           </label>
         </div>
+        <label class="pn-ed-lbl">${this._t('naMode')}</label>
+        <select class="pn-ed-inp" data-idx="${i}" data-field="na_mode" style="width:100%;">
+          <option value="off" ${(n.na_mode || 'off') === 'off' ? 'selected' : ''}>${this._t('naModeOff')}</option>
+          <option value="hide" ${n.na_mode === 'hide' ? 'selected' : ''}>${this._t('naModeHide')}</option>
+          <option value="fade" ${n.na_mode === 'fade' ? 'selected' : ''}>${this._t('naModeFade')}</option>
+        </select>
+        <div class="pn-ed-hint">${this._t('naModeHint')}</div>
         <div style="font-size:11px;font-weight:600;color:var(--secondary-text-color,#757575);margin-top:14px;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">${this._t('colors')}</div>
         <div style="display:flex;margin-top:0;margin-bottom:4px;">
           <div style="flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:1px;">
